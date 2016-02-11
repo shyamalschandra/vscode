@@ -5,14 +5,12 @@
 
 'use strict';
 
+import {Action} from 'vs/base/common/actions';
 import {TPromise} from 'vs/base/common/winjs.base';
 import nls = require('vs/nls');
-import env = require('vs/base/common/flags');
 import {MainThreadService as CommonMainThreadService} from 'vs/platform/thread/common/mainThreadService';
 import pluginsIPC = require('vs/platform/plugins/common/ipcRemoteCom');
-import remote = require('vs/base/common/remote');
 import marshalling = require('vs/base/common/marshalling');
-import json = require('vs/base/common/json');
 import strings = require('vs/base/common/strings');
 import objects = require('vs/base/common/objects');
 import uri from 'vs/base/common/uri';
@@ -24,9 +22,13 @@ import {IWindowService} from 'vs/workbench/services/window/electron-browser/wind
 import ports = require('vs/base/node/ports');
 
 import cp = require('child_process');
-import ipc = require('ipc');
+import {ipcRenderer as ipc} from 'electron';
 
 export const PLUGIN_LOG_BROADCAST_CHANNEL = 'vscode:pluginLog';
+export const PLUGIN_ATTACH_BROADCAST_CHANNEL = 'vscode:pluginAttach';
+
+// The amd loader has the global scope assigned to this.
+const globalRequire = this.require;
 
 // Enable to see detailed message communication between window and plugin host
 const logPluginHostCommunication = false;
@@ -63,7 +65,7 @@ export class MainThreadService extends CommonMainThreadService {
 				console.log('%c[Plugin \u2192 Window]%c[len: ' + strings.pad(msg.length, 5, ' ') + ']', 'color: darkgreen', 'color: grey', JSON.parse(msg));
 			}
 
-			this.remoteCom.handle(msg)
+			this.remoteCom.handle(msg);
 		});
 
 		this.remoteCom.registerBigHandler(this);
@@ -107,6 +109,7 @@ class PluginHostProcessManager {
 	public startPluginHostProcess(onPluginHostMessage: (msg: any) => void): void {
 		let config = this.contextService.getConfiguration();
 		let isDev = !config.env.isBuilt || !!config.env.pluginDevelopmentPath;
+		let isTestingFromCli = !!config.env.pluginTestsPath && !config.env.debugBrkPluginHost;
 
 		let opts: any = {
 			env: objects.mixin(objects.clone(process.env), { AMD_ENTRYPOINT: 'vs/workbench/node/pluginHostProcess', PIPE_LOGGING: 'true', VERBOSE_LOGGING: true })
@@ -115,7 +118,7 @@ class PluginHostProcessManager {
 		// Help in case we fail to start it
 		if (isDev) {
 			this.initializeTimer = setTimeout(() => {
-				const msg = config.env.debugBrkPluginHost ? nls.localize('pluginHostProcess.startupFailDebug', "Plugin host did not start in 10 seconds, it might be stopped on the first line and needs a debugger to continue.") : nls.localize('pluginHostProcess.startupFail', "Plugin host did not start in 10 seconds, that might be a problem.");
+				const msg = config.env.debugBrkPluginHost ? nls.localize('pluginHostProcess.startupFailDebug', "Extension host did not start in 10 seconds, it might be stopped on the first line and needs a debugger to continue.") : nls.localize('pluginHostProcess.startupFail', "Extension host did not start in 10 seconds, that might be a problem.");
 
 				this.messageService.show(Severity.Warning, msg);
 			}, 10000);
@@ -125,13 +128,23 @@ class PluginHostProcessManager {
 		this.initializePluginHostProcess = new TPromise<cp.ChildProcess>((c, e) => {
 
 			// Resolve additional execution args (e.g. debug)
-			return this.resolveExecArgv(config, (execArgv) => {
-				if (execArgv) {
-					opts.execArgv = execArgv;
+			return this.resolveDebugPort(config, (port) => {
+				if (port) {
+					opts.execArgv = ['--nolazy', (config.env.debugBrkPluginHost ? '--debug-brk=' : '--debug=') + port];
 				}
 
 				// Run Plugin Host as fork of current process
 				this.pluginHostProcessHandle = cp.fork(uri.parse(require.toUrl('bootstrap')).fsPath, ['--type=pluginHost'], opts);
+
+				// Notify debugger that we are ready to attach to the process if we run a development plugin
+				if (config.env.pluginDevelopmentPath && port) {
+					this.windowService.broadcast({
+						channel: PLUGIN_ATTACH_BROADCAST_CHANNEL,
+						payload: {
+							port: port
+						}
+					}, config.env.pluginDevelopmentPath /* target */);
+				}
 
 				// Messages from Plugin host
 				this.pluginHostProcessHandle.on('message', (msg) => {
@@ -142,7 +155,7 @@ class PluginHostProcessManager {
 							window.clearTimeout(this.initializeTimer);
 						}
 
-						let initPayload = marshalling.serialize({
+						let initPayload = marshalling.stringify({
 							parentPid: process.pid,
 							contextService: {
 								workspace: this.contextService.getWorkspace(),
@@ -164,9 +177,9 @@ class PluginHostProcessManager {
 
 					// Support logging from plugin host
 					else if (msg && (<ILogEntry>msg).type === '__$console') {
-						let logEntry:ILogEntry = msg;
+						let logEntry: ILogEntry = msg;
 
-						let args = ['%c[Plugin Host]', 'color: blue'];
+						let args = [];
 						try {
 							let parsed = JSON.parse(logEntry.arguments);
 							args.push(...Object.getOwnPropertyNames(parsed).map(o => parsed[o]));
@@ -174,15 +187,32 @@ class PluginHostProcessManager {
 							args.push(logEntry.arguments);
 						}
 
-						// Send to local console
-						console[logEntry.severity].apply(console, args);
+						// If the first argument is a string, check for % which indicates that the message
+						// uses substitution for variables. In this case, we cannot just inject our colored
+						// [Plugin Host] to the front because it breaks substitution.
+						let consoleArgs = [];
+						if (typeof args[0] === 'string' && args[0].indexOf('%') >= 0) {
+							consoleArgs = [`%c[Plugin Host]%c ${args[0]}`, 'color: blue', 'color: black', ...args.slice(1)];
+						} else {
+							consoleArgs = ['%c[Plugin Host]', 'color: blue', ...args];
+						}
+
+						// Send to local console unless we run tests from cli
+						if (!isTestingFromCli) {
+							console[logEntry.severity].apply(console, consoleArgs);
+						}
+
+						// Log on main side if running tests from cli
+						if (isTestingFromCli) {
+							ipc.send('vscode:log', logEntry);
+						}
 
 						// Broadcast to other windows if we are in development mode
-						if (isDev) {
+						else if (isDev) {
 							this.windowService.broadcast({
 								channel: PLUGIN_LOG_BROADCAST_CHANNEL,
 								payload: logEntry
-							});
+							}, config.env.pluginDevelopmentPath /* target */);
 						}
 					}
 
@@ -204,7 +234,7 @@ class PluginHostProcessManager {
 
 					this.lastPluginHostError = errorMessage;
 
-					this.messageService.show(Severity.Error, nls.localize('pluginHostProcess.error', "Error from the plugin host: {0}", errorMessage));
+					this.messageService.show(Severity.Error, nls.localize('pluginHostProcess.error', "Error from the extension host: {0}", errorMessage));
 				});
 
 				this.pluginHostProcessHandle.on('exit', (code: any, signal: any) => {
@@ -214,13 +244,21 @@ class PluginHostProcessManager {
 
 						// Unexpected termination
 						if (!this.isPluginDevelopmentHost) {
-							this.messageService.show(Severity.Error, nls.localize('pluginHostProcess.crash', "Plugin host terminated unexpectedly. Please restart VSCode to recover."));
+							this.messageService.show(Severity.Error, {
+								message: nls.localize('pluginHostProcess.crash', "Extension host terminated unexpectedly. Please reload the window to recover."),
+								actions: [new Action('reloadWindow', nls.localize('reloadWindow', "Reload Window"), null, true, () => { this.windowService.getWindow().reload(); return TPromise.as(null); })]
+							});
 							console.error('Plugin host terminated unexpectedly. Code: ', code, ' Signal: ', signal);
 						}
 
 						// Expected development plugin termination: When the plugin host goes down we also shutdown the window
-						else {
+						else if (!isTestingFromCli) {
 							this.windowService.getWindow().close();
+						}
+
+						// When CLI testing make sure to exit with proper exit code
+						else {
+							ipc.send('vscode:exit', code);
 						}
 					}
 				});
@@ -228,7 +266,7 @@ class PluginHostProcessManager {
 		}, () => this.terminate());
 	}
 
-	private resolveExecArgv(config: IConfiguration, clb: (execArgv: any) => void): void {
+	private resolveDebugPort(config: IConfiguration, clb: (port: number) => void): void {
 
 		// Check for a free debugging port
 		if (typeof config.env.debugPluginHostPort === 'number') {
@@ -249,7 +287,7 @@ class PluginHostProcessManager {
 					console.info('%c[Plugin Host] %cdebugger listening on port ' + port, 'color: blue', 'color: black');
 				}
 
-				return clb(['--nolazy', (config.env.debugBrkPluginHost ? '--debug-brk=' : '--debug=') + port]);
+				return clb(port);
 			});
 		}
 
@@ -271,7 +309,9 @@ class PluginHostProcessManager {
 		this.terminating = true;
 
 		if (this.pluginHostProcessHandle) {
-			this.pluginHostProcessHandle.kill();
+			this.pluginHostProcessHandle.send({
+				type: '__$terminate'
+			});
 		}
 	}
 }

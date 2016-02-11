@@ -18,10 +18,10 @@ import {IEditorInput, IEditorService, IEditorOptions, Position, IEditor, IResour
 import {IMessageService, IConfirmation} from 'vs/platform/message/common/message';
 import {ITelemetryService} from 'vs/platform/telemetry/common/telemetry';
 import {IWorkspaceContextService} from 'vs/platform/workspace/common/workspace';
-import {IKeybindingContextKey, IKeybindingItem, ICommandHandler, ICommandsMap} from 'vs/platform/keybinding/common/keybindingService';
-import {AbstractPluginService} from 'vs/platform/plugins/common/abstractPluginService';
-import {IOSupport} from 'vs/platform/keybinding/common/commonKeybindingResolver';
-import {PluginsRegistry, PluginsMessageCollector} from 'vs/platform/plugins/common/pluginsRegistry';
+import {IKeybindingItem, ICommandHandler, ICommandsMap} from 'vs/platform/keybinding/common/keybindingService';
+import {AbstractPluginService, ActivatedPlugin} from 'vs/platform/plugins/common/abstractPluginService';
+import {IOSupport} from 'vs/platform/keybinding/common/keybindingResolver';
+import {IPluginDescription} from 'vs/platform/plugins/common/plugins';
 
 export class SimpleEditor implements IEditor {
 
@@ -121,7 +121,7 @@ export class SimpleEditorService implements IEditorService {
 		if (selection) {
 			if (typeof selection.endLineNumber === 'number' && typeof selection.endColumn === 'number') {
 				editor.setSelection(selection);
-				editor.revealRangeInCenter(selection)
+				editor.revealRangeInCenter(selection);
 			} else {
 				var pos = {
 					lineNumber: selection.startLineNumber,
@@ -137,7 +137,7 @@ export class SimpleEditorService implements IEditorService {
 
 	private findModel(editor:EditorCommon.ICommonCodeEditor, data:IResourceInput): EditorCommon.IModel {
 		var model = editor.getModel();
-		if(!model.getAssociatedResource().equals(data.resource)) {
+		if(model.getAssociatedResource().toString() !== data.resource.toString()) {
 			return null;
 		}
 
@@ -207,10 +207,6 @@ export class SimpleEditorRequestService extends BaseRequestService {
 	constructor(contextService: IWorkspaceContextService, telemetryService?: ITelemetryService) {
 		super(contextService, telemetryService);
 	}
-
-	public getPath(service:string, requestUrl:Network.URL):string {
-		return requestUrl.toString(); // Standalone Editor talks about  URLs that never have a path
-	}
 }
 
 export class StandaloneKeybindingService extends KeybindingService.KeybindingService {
@@ -251,13 +247,10 @@ export class StandaloneKeybindingService extends KeybindingService.KeybindingSer
 	}
 }
 
-export class SimplePluginService extends AbstractPluginService {
+export class SimplePluginService extends AbstractPluginService<ActivatedPlugin> {
 
 	constructor() {
 		super(true);
-		PluginsRegistry.handleExtensionPoints((severity, source, message) => {
-			this.showMessage(severity, source, message);
-		});
 	}
 
 	protected _showMessage(severity:Severity, msg:string): void {
@@ -275,4 +268,17 @@ export class SimplePluginService extends AbstractPluginService {
 				console.log(msg);
 		}
 	}
+
+	public deactivate(pluginId:string): void {
+		// nothing to do
+	}
+
+	protected _createFailedPlugin(): ActivatedPlugin {
+		throw new Error('unexpected');
+	}
+
+	protected _actualActivatePlugin(pluginDescription: IPluginDescription): TPromise<ActivatedPlugin> {
+		throw new Error('unexpected');
+	}
+
 }

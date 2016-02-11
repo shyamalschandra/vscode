@@ -10,6 +10,8 @@ import WinJS = require('vs/base/common/winjs.base');
 import nls = require('vs/nls');
 import JSONWorker = require('vs/languages/json/common/jsonWorker');
 import {IRequestService} from 'vs/platform/request/common/request';
+import URI from 'vs/base/common/uri';
+import {JSONLocation} from 'vs/languages/json/common/parser/jsonLocation';
 
 export class BowerJSONContribution implements JSONWorker.IJSONWorkerContribution {
 
@@ -27,24 +29,29 @@ export class BowerJSONContribution implements JSONWorker.IJSONWorkerContribution
 		this.requestService = requestService;
 	}
 
-	public collectDefaultSuggestions(contributionId: string, result: JSONWorker.ISuggestionsCollector): WinJS.Promise {
-		if (contributionId === 'http://json.schemastore.org/bower') {
+	private isBowerFile(resource: URI): boolean {
+		var path = resource.path;
+		return Strings.endsWith(path, '/bower.json') || Strings.endsWith(path, '/.bower.json');
+	}
+
+	public collectDefaultSuggestions(resource: URI, result: JSONWorker.ISuggestionsCollector): WinJS.Promise {
+		if (this.isBowerFile(resource)) {
 			var defaultValue = {
 				'name': '{{name}}',
 				'description': '{{description}}',
-				'author': '{{author}}',
+				'authors': [ '{{author}}' ],
 				'version': '{{1.0.0}}',
 				'main': '{{pathToMain}}',
 				'dependencies': {}
 			};
 			result.add({ type: 'type', label: nls.localize('json.bower.default', 'Default bower.json'), codeSnippet: JSON.stringify(defaultValue, null, '\t'), documentationLabel: '' });
 		}
-		return WinJS.Promise.as(0);
+		return null;
 	}
 
-	public collectPropertySuggestions(contributionId: string, currentWord: string, addValue: boolean, isLast:boolean, result: JSONWorker.ISuggestionsCollector) : WinJS.Promise {
-		if (contributionId === 'bower-packages') {
- 			if (currentWord.length > 0) {
+	public collectPropertySuggestions(resource: URI, location: JSONLocation, currentWord: string, addValue: boolean, isLast:boolean, result: JSONWorker.ISuggestionsCollector) : WinJS.Promise {
+		if (this.isBowerFile(resource) && (location.matches(['dependencies']) || location.matches(['devDependencies']))) {
+			if (currentWord.length > 0) {
 				var queryUrl = 'https://bower.herokuapp.com/packages/search/' + encodeURIComponent(currentWord);
 
 				return this.requestService.makeRequest({
@@ -80,7 +87,7 @@ export class BowerJSONContribution implements JSONWorker.IJSONWorkerContribution
 					result.error(nls.localize('json.bower.error.repoaccess', 'Request to the bower repository failed: {0}', error.responseText));
 					return 0;
 				});
-			 } else {
+			} else {
 				this.topRanked.forEach((name) => {
 					var codeSnippet = JSON.stringify(name);
 					if (addValue) {
@@ -90,20 +97,21 @@ export class BowerJSONContribution implements JSONWorker.IJSONWorkerContribution
 						}
 					}
 					result.add({ type: 'property', label: name, codeSnippet: codeSnippet, documentationLabel: '' });
-				 });
-				 result.setAsIncomplete();
-			 }
+				});
+				result.setAsIncomplete();
+			}
 		}
-		return WinJS.Promise.as(0);
+		return null;
 	}
 
-	public collectValueSuggestions(contributionId: string, currentKey: string, result: JSONWorker.ISuggestionsCollector): WinJS.Promise {
+	public collectValueSuggestions(resource: URI, location: JSONLocation, currentKey: string, result: JSONWorker.ISuggestionsCollector): WinJS.Promise {
 		// not implemented. Could be do done calling the bower command. Waiting for web API: https://github.com/bower/registry/issues/26
-		return WinJS.Promise.as(0);
+		return null;
 	}
 
-	public getInfoContribution(contributionId: string, pack: string): WinJS.TPromise<HtmlContent.IHTMLContentElement[]> {
-		if (contributionId === 'bower-package') {
+	public getInfoContribution(resource: URI, location: JSONLocation): WinJS.TPromise<HtmlContent.IHTMLContentElement[]> {
+		if (this.isBowerFile(resource) && (location.matches(['dependencies', '*']) || location.matches(['devDependencies', '*']))) {
+			var pack = location.getSegments()[location.getSegments().length - 1];
 			var htmlContent : HtmlContent.IHTMLContentElement[] = [];
 			htmlContent.push({className: 'type', text: nls.localize('json.bower.package.hover', '{0}', pack) });
 

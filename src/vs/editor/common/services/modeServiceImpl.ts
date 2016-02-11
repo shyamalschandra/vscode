@@ -24,6 +24,7 @@ import {IEditorModesRegistry, Extensions} from 'vs/editor/common/modes/modesRegi
 import MonarchCommonTypes = require('vs/editor/common/modes/monarch/monarchCommon');
 import {OnEnterSupport, IOnEnterSupportOptions} from 'vs/editor/common/modes/supports/onEnter';
 import {IDisposable, combinedDispose, empty as EmptyDisposable} from 'vs/base/common/lifecycle';
+import {createAsyncDescriptor0, createAsyncDescriptor1} from 'vs/platform/instantiation/common/descriptors';
 
 interface IModeConfigurationMap { [modeId: string]: any; }
 
@@ -187,23 +188,28 @@ export class ModeServiceImpl implements IModeService {
 		if (this._activationPromises.hasOwnProperty(modeId)) {
 			return this._activationPromises[modeId];
 		}
+		var c, e;
+		var promise = new TPromise((cc,ee,pp) => { c = cc; e = ee; });
+		this._activationPromises[modeId] = promise;
 
-		this._activationPromises[modeId] = this._createMode(modeId).then((mode) => {
+		this._createMode(modeId).then((mode) => {
 			this._instantiatedModes[modeId] = mode;
 			delete this._activationPromises[modeId];
 			return this._instantiatedModes[modeId];
-		});
-		return this._activationPromises[modeId];
+		}).then(c, e);
+
+		return promise;
 	}
 
 	protected _createMode(modeId:string): TPromise<Modes.IMode> {
 		let activationEvent = 'onLanguage:' + modeId;
 
-		let compatModeAsyncDescriptor = LanguageExtensions.getCompatMode(modeId);
+		let compatModeData = LanguageExtensions.getCompatMode(modeId);
 
-		if (compatModeAsyncDescriptor) {
+		if (compatModeData) {
 			return this._pluginService.activateByEvent(activationEvent).then((_) => {
 				var modeDescriptor = this._createModeDescriptor(modeId);
+				let compatModeAsyncDescriptor = createAsyncDescriptor1<Modes.IModeDescriptor, Modes.IMode>(compatModeData.moduleId, compatModeData.ctorName);
 				return this._threadService.createInstance(compatModeAsyncDescriptor, modeDescriptor);
 			}).then((compatMode) => {
 				if (compatMode.configSupport) {
@@ -231,7 +237,7 @@ export class ModeServiceImpl implements IModeService {
 		var workerParticipants = modesRegistry.getWorkerParticipants(modeId);
 		return {
 			id: modeId,
-			workerParticipants: workerParticipants
+			workerParticipants: workerParticipants.map(p => createAsyncDescriptor0(p.moduleId, p.ctorName))
 		};
 	}
 
@@ -248,7 +254,7 @@ export class ModeServiceImpl implements IModeService {
 			dispose: () => {
 				promise.done(disposable => disposable.dispose(), null);
 			}
-		}
+		};
 	}
 
 	protected doRegisterMonarchDefinition(modeId:string, lexer: MonarchCommonTypes.ILexer): IDisposable {

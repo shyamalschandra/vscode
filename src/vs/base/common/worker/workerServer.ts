@@ -4,16 +4,16 @@
  *--------------------------------------------------------------------------------------------*/
 'use strict';
 
-import winjs = require('vs/base/common/winjs.base');
+import {TPromise} from 'vs/base/common/winjs.base';
 import protocol = require('vs/base/common/worker/workerProtocol');
 import errors = require('vs/base/common/errors');
 import remote = require('vs/base/common/remote');
 import marshalling = require('vs/base/common/marshalling');
 
 interface IReplyCallbacks {
-	c: winjs.ValueCallback;
-	e: winjs.ErrorCallback;
-	p: winjs.ProgressCallback;
+	c: (value:any)=>void;
+	e: (err:any)=>void;
+	p: (progress:any)=>void;
 }
 
 export class WorkerServer {
@@ -24,7 +24,6 @@ export class WorkerServer {
 	private _lastReq: number;
 	private _awaitedReplies: { [req:string]: IReplyCallbacks; };
 	private _remoteCom: protocol.RemoteCom;
-	private _proxiesMarshalling: remote.ProxiesMarshallingContribution;
 
 	constructor(postSerializedMessage:(msg:string)=>void) {
 		this._postSerializedMessage = postSerializedMessage;
@@ -35,7 +34,6 @@ export class WorkerServer {
 		this._bindConsole();
 
 		this._remoteCom = new protocol.RemoteCom(this);
-		this._proxiesMarshalling = new remote.ProxiesMarshallingContribution(this._remoteCom);
 	}
 
 	public getRemoteCom(): remote.IRemoteCom {
@@ -81,7 +79,7 @@ export class WorkerServer {
 		this._postMessage(msg);
 	}
 
-	public request(requestName:string, payload:any): winjs.Promise {
+	public request(requestName:string, payload:any): TPromise<any> {
 		if (requestName.charAt(0) === '$') {
 			throw new Error('Illegal requestName: ' + requestName);
 		}
@@ -102,7 +100,7 @@ export class WorkerServer {
 			p: null
 		};
 
-		var r = new winjs.Promise((c, e, p) => {
+		var r = new TPromise<any>((c, e, p) => {
 			reply.c = c;
 			reply.e = e;
 			reply.p = p;
@@ -122,11 +120,11 @@ export class WorkerServer {
 	}
 
 	public onmessage(msg:string): void {
-		this._onmessage(marshalling.demarshallObject(msg, this._proxiesMarshalling));
+		this._onmessage(marshalling.parse(msg));
 	}
 
 	private _postMessage(msg:protocol.IServerMessage): void {
-		this._postSerializedMessage(marshalling.marshallObject(msg, this._proxiesMarshalling));
+		this._postSerializedMessage(marshalling.stringify(msg));
 	}
 
 	private _onmessage(msg:protocol.IClientMessage): void {
@@ -172,6 +170,14 @@ export class WorkerServer {
 							delete loaderConfig.paths['vs'];
 						}
 					}
+					let nlsConfig = loaderConfig['vs/nls'];
+					// We need to have pseudo translation
+					if (nlsConfig && nlsConfig.pseudo) {
+						require(['vs/nls'], function(nlsPlugin) {
+							nlsPlugin.setPseudoTranslation(nlsConfig.pseudo);
+						});
+					}
+
 					// Since this is in a web worker, enable catching errors
 					loaderConfig.catchError = true;
 					(<any>self).require.config(loaderConfig);
@@ -194,7 +200,7 @@ export class WorkerServer {
 		}
 	}
 
-	private _handleMessage(msg:protocol.IClientMessage, c:winjs.ValueCallback, e:winjs.ErrorCallback, p:winjs.ProgressCallback): void {
+	private _handleMessage(msg:protocol.IClientMessage, c:(value:any)=>void, e:(err:any)=>void, p:(progress:any)=>void): void {
 
 		if (msg.type === '_proxyObj') {
 			this._remoteCom.handleMessage(msg.payload).then(c, e, p);

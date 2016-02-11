@@ -11,11 +11,10 @@ import quickFixModel = require('./quickFixModel');
 import {TPromise} from 'vs/base/common/winjs.base';
 import {EditorBrowserRegistry} from 'vs/editor/browser/editorBrowserExtensions';
 import {CommonEditorRegistry, ContextKey, EditorActionDescriptor} from 'vs/editor/common/editorCommonExtensions';
-import {EditorAction, Behaviour} from 'vs/editor/common/editorAction';
+import {EditorAction} from 'vs/editor/common/editorAction';
 import Severity from 'vs/base/common/severity';
 import EditorBrowser = require('vs/editor/browser/editorBrowser');
 import EditorCommon = require('vs/editor/common/editorCommon');
-import codeEditorWidget = require('vs/editor/browser/widget/codeEditorWidget');
 import {IKeybindingService, IKeybindingContextKey} from 'vs/platform/keybinding/common/keybindingService';
 import {IMarkerService} from 'vs/platform/markers/common/markers';
 import {ITelemetryService} from 'vs/platform/telemetry/common/telemetry';
@@ -24,7 +23,7 @@ import {IEventService} from 'vs/platform/event/common/event';
 import {IEditorService} from 'vs/platform/editor/common/editor';
 import {IMessageService} from 'vs/platform/message/common/message';
 import {bulkEdit} from 'vs/editor/common/services/bulkEdit';
-import QuickFixRegistry, {IQuickFix2} from '../common/quickFix';
+import {QuickFixRegistry, IQuickFix2} from '../common/quickFix';
 import {KeyMod, KeyCode} from 'vs/base/common/keyCodes';
 
 export class QuickFixController implements EditorCommon.IEditorContribution {
@@ -60,7 +59,7 @@ export class QuickFixController implements EditorCommon.IEditorContribution {
 
 		this.quickFixWidgetVisible = keybindingService.createKey(CONTEXT_QUICK_FIX_WIDGET_VISIBLE, false);
 		this.suggestWidget = new quickFixSelectionWidget.QuickFixSelectionWidget(this.editor, telemetryService,() => {
-			this.quickFixWidgetVisible.set(true)
+			this.quickFixWidgetVisible.set(true);
 		},() => {
 			this.quickFixWidgetVisible.reset();
 		});
@@ -77,7 +76,7 @@ export class QuickFixController implements EditorCommon.IEditorContribution {
 			return;
 		}
 
-		fix.support.runQuickFixAction(this.editor.getModel().getAssociatedResource(), range, fix.id).then(result => {
+		fix.support.runQuickFixAction(this.editor.getModel().getAssociatedResource(), range, { command: fix.command, score: fix.score }).then(result => {
 			if (result) {
 				if (result.message) {
 					this.messageService.show(Severity.Info, result.message);

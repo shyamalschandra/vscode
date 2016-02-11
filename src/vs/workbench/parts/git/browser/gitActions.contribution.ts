@@ -8,7 +8,7 @@ import nls = require('vs/nls');
 import lifecycle = require('vs/base/common/lifecycle');
 import platform = require('vs/platform/platform');
 import abr = require('vs/workbench/browser/actionBarRegistry');
-import { Promise } from 'vs/base/common/winjs.base';
+import { TPromise } from 'vs/base/common/winjs.base';
 import { basename } from 'vs/base/common/paths';
 import editorbrowser = require('vs/editor/browser/editorBrowser');
 import editorcommon = require('vs/editor/common/editorCommon');
@@ -29,21 +29,21 @@ import {IPartService, Parts} from 'vs/workbench/services/part/common/partService
 import {IWorkspaceContextService} from 'vs/workbench/services/workspace/common/contextService';
 import {IFileService, IFileStat} from 'vs/platform/files/common/files';
 import {IInstantiationService} from 'vs/platform/instantiation/common/instantiation';
-import wbar = require('vs/workbench/browser/actionRegistry');
+import wbar = require('vs/workbench/common/actionRegistry');
 import { SyncActionDescriptor } from 'vs/platform/actions/common/actions';
-import { OpenChangeAction } from './gitActions';
+import { OpenChangeAction, SyncAction, PullAction, PushAction, PublishAction, StartGitBranchAction, StartGitCheckoutAction } from './gitActions';
 import Severity from 'vs/base/common/severity';
+import paths = require('vs/base/common/paths');
+import URI from 'vs/base/common/uri';
 
 function getStatus(gitService: IGitService, contextService: IWorkspaceContextService, input: WorkbenchEditorCommon.IFileEditorInput): IFileStatus {
-	var statusModel = gitService.getModel().getStatus();
+	const model = gitService.getModel();
+	const repositoryRoot = model.getRepositoryRoot();
+	const statusModel = model.getStatus();
+	const repositoryRelativePath = paths.normalize(paths.relative(repositoryRoot, input.getResource().fsPath));
 
-	var workspaceRelativePath = contextService.toWorkspaceRelativePath(input.getResource());
-	if (!workspaceRelativePath) {
-		return null; // out of workspace not yet supported
-	}
-
-	return statusModel.getWorkingTreeStatus().find(workspaceRelativePath) ||
-			statusModel.getIndexStatus().find(workspaceRelativePath);
+	return statusModel.getWorkingTreeStatus().find(repositoryRelativePath) ||
+			statusModel.getIndexStatus().find(repositoryRelativePath);
 }
 
 class OpenInDiffAction extends baseeditor.EditorInputAction {
@@ -78,6 +78,10 @@ class OpenInDiffAction extends baseeditor.EditorInputAction {
 			return false;
 		}
 
+		if (!(typeof this.gitService.getModel().getRepositoryRoot() === 'string')) {
+			return false;
+		}
+
 		var status = this.getStatus();
 
 		return status && (
@@ -97,13 +101,13 @@ class OpenInDiffAction extends baseeditor.EditorInputAction {
 		return getStatus(this.gitService, this.contextService, <filesCommon.FileEditorInput> this.input);
 	}
 
-	public run(event?: any): Promise {
+	public run(event?: any): TPromise<any> {
 		var sideBySide = !!(event && (event.ctrlKey || event.metaKey));
 		var editor = <editorbrowser.ICodeEditor> this.editorService.getActiveEditor().getControl();
 		var viewState = editor ? editor.saveViewState() : null;
 
 		return this.gitService.getInput(this.getStatus()).then((input) => {
-			var promise = Promise.as(null);
+			var promise = TPromise.as(null);
 
 			if (this.partService.isVisible(Parts.SIDEBAR_PART)) {
 				promise = this.viewletService.openViewlet(gitcontrib.VIEWLET_ID, false);
@@ -164,6 +168,10 @@ class OpenInEditorAction extends baseeditor.EditorInputAction {
 			return false;
 		}
 
+		if (!(typeof this.gitService.getModel().getRepositoryRoot() === 'string')) {
+			return false;
+		}
+
 		var status:IFileStatus = (<any>this.input).getFileStatus();
 		if (OpenInEditorAction.DELETED_STATES.indexOf(status.getStatus()) > -1) {
 			return false;
@@ -172,19 +180,20 @@ class OpenInEditorAction extends baseeditor.EditorInputAction {
 		return true;
 	}
 
-	public run(event?: any): Promise {
-		var sideBySide = !!(event && (event.ctrlKey || event.metaKey));
-		var modifiedViewState = this.saveTextViewState();
-		var path = this.getPath();
+	public run(event?: any): TPromise<any> {
+		const model = this.gitService.getModel();
+		const resource = URI.file(paths.join(model.getRepositoryRoot(), this.getRepositoryRelativePath()));
+		const sideBySide = !!(event && (event.ctrlKey || event.metaKey));
+		const modifiedViewState = this.saveTextViewState();
 
-		return this.fileService.resolveFile(this.contextService.toResource(path)).then((stat: IFileStat) => {
+		return this.fileService.resolveFile(resource).then(stat => {
 			return this.editorService.openEditor({
 				resource: stat.resource,
 				mime: stat.mime,
 				options: {
 					forceOpen: true
 				}
-			}, sideBySide).then((editor)=> {
+			}, sideBySide).then(editor => {
 				this.restoreTextViewState(modifiedViewState);
 
 				if (this.partService.isVisible(Parts.SIDEBAR_PART)) {
@@ -222,7 +231,7 @@ class OpenInEditorAction extends baseeditor.EditorInputAction {
 		return null;
 	}
 
-	private getPath():string {
+	private getRepositoryRelativePath():string {
 		var status: IFileStatus = (<any> this.input).getFileStatus();
 
 		if (status.getStatus() === Status.INDEX_RENAMED) {
@@ -274,7 +283,7 @@ export class StageRangesAction extends baseeditor.EditorInputAction {
 		return stageranges.getSelectedChanges(changes, selections).length > 0;
 	}
 
-	public run():Promise {
+	public run():TPromise<any> {
 		var result = stageranges.stageRanges(this.editor);
 
 		var status = (<gitei.GitWorkingTreeDiffEditorInput>this.input).getFileStatus();
@@ -380,17 +389,17 @@ class GlobalOpenChangeAction extends OpenChangeAction {
 		return WorkbenchEditorCommon.asFileEditorInput(this.editorService.getActiveEditorInput());
 	}
 
-	public run(context?: any): Promise {
+	public run(context?: any): TPromise<any> {
 		let input = this.getInput();
 
 		if (!input) {
-			return Promise.as(null);
+			return TPromise.as(null);
 		}
 
 		let status = getStatus(this.gitService, this.contextService, input);
 
 		if (!status) {
-			return Promise.as(null);
+			return TPromise.as(null);
 		}
 
 		var sideBySide = !!(context && (context.ctrlKey || context.metaKey));
@@ -398,7 +407,7 @@ class GlobalOpenChangeAction extends OpenChangeAction {
 		var viewState = editor ? editor.saveViewState() : null;
 
 		return this.gitService.getInput(status).then((input) => {
-			var promise = Promise.as(null);
+			var promise = TPromise.as(null);
 
 			if (this.partService.isVisible(Parts.SIDEBAR_PART)) {
 				promise = this.viewletService.openViewlet(gitcontrib.VIEWLET_ID, false);
@@ -420,8 +429,6 @@ class GlobalOpenChangeAction extends OpenChangeAction {
 				});
 			});
 		});
-
-		return Promise.as(true);
 	}
 }
 
@@ -432,5 +439,12 @@ actionBarRegistry.registerActionBarContributor(abr.Scope.EDITOR, GitWorkingTreeD
 
 let workbenchActionRegistry = (<wbar.IWorkbenchActionRegistry> platform.Registry.as(wbar.Extensions.WorkbenchActions));
 
-// Register Action to Open Viewlet
-workbenchActionRegistry.registerWorkbenchAction(new SyncActionDescriptor(GlobalOpenChangeAction, GlobalOpenChangeAction.ID, GlobalOpenChangeAction.LABEL), nls.localize('git', "Git"));
+// Register Actions
+const category = nls.localize('git', "Git");
+workbenchActionRegistry.registerWorkbenchAction(new SyncActionDescriptor(GlobalOpenChangeAction, GlobalOpenChangeAction.ID, GlobalOpenChangeAction.LABEL), category);
+workbenchActionRegistry.registerWorkbenchAction(new SyncActionDescriptor(PullAction, PullAction.ID, PullAction.LABEL), category);
+workbenchActionRegistry.registerWorkbenchAction(new SyncActionDescriptor(PushAction, PushAction.ID, PushAction.LABEL), category);
+workbenchActionRegistry.registerWorkbenchAction(new SyncActionDescriptor(SyncAction, SyncAction.ID, SyncAction.LABEL), category);
+workbenchActionRegistry.registerWorkbenchAction(new SyncActionDescriptor(PublishAction, PublishAction.ID, PublishAction.LABEL), category);
+workbenchActionRegistry.registerWorkbenchAction(new SyncActionDescriptor(StartGitBranchAction, StartGitBranchAction.ID, StartGitBranchAction.LABEL), category);
+workbenchActionRegistry.registerWorkbenchAction(new SyncActionDescriptor(StartGitCheckoutAction, StartGitCheckoutAction.ID, StartGitCheckoutAction.LABEL), category);

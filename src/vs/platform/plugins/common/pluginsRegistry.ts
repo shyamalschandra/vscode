@@ -7,50 +7,49 @@
 import {IPluginDescription, IPointListener, IActivationEventListener, IMessage} from 'vs/platform/plugins/common/plugins';
 import {Registry} from 'vs/platform/platform';
 import Errors = require('vs/base/common/errors');
-import env = require('vs/base/common/flags');
-import * as JSONContributionRegistry from 'vs/languages/json/common/jsonContributionRegistry';
+import * as JSONContributionRegistry from 'vs/platform/jsonschemas/common/jsonContributionRegistry';
 import {IJSONSchema} from 'vs/base/common/jsonSchema';
 import nls = require('vs/nls');
 import paths = require('vs/base/common/paths');
 import Severity from 'vs/base/common/severity';
 
 export interface IMessageCollector {
-	error(message:any): void;
-	warn(message:any): void;
-	info(message:any): void;
+	error(message: any): void;
+	warn(message: any): void;
+	info(message: any): void;
 }
 
 export interface IPluginsMessageCollector {
-	error(source:string, message:any): void;
-	warn(source:string, message:any): void;
-	info(source:string, message:any): void;
-	scopeTo(source:string): IMessageCollector;
+	error(source: string, message: any): void;
+	warn(source: string, message: any): void;
+	info(source: string, message: any): void;
+	scopeTo(source: string): IMessageCollector;
 }
 
 class ScopedMessageCollector implements IMessageCollector {
 	private _scope: string;
 	private _actual: IPluginsMessageCollector;
 
-	constructor(scope:string, actual: IPluginsMessageCollector) {
+	constructor(scope: string, actual: IPluginsMessageCollector) {
 		this._scope = scope;
 		this._actual = actual;
 	}
 
-	public error(message:any): void {
+	public error(message: any): void {
 		this._actual.error(this._scope, message);
 	}
 
-	public warn(message:any): void {
+	public warn(message: any): void {
 		this._actual.warn(this._scope, message);
 	}
 
-	public info(message:any): void {
+	public info(message: any): void {
 		this._actual.info(this._scope, message);
 	}
 }
 
 export interface IMessageHandler {
-	(severity:Severity, source:string, message:string): void;
+	(severity: Severity, source: string, message: string): void;
 }
 
 class PluginsMessageForwarder implements IPluginsMessageCollector {
@@ -88,7 +87,7 @@ class PluginsMessageForwarder implements IPluginsMessageCollector {
 		this._pushMessage(Severity.Info, source, message);
 	}
 
-	public scopeTo(source:string): IMessageCollector {
+	public scopeTo(source: string): IMessageCollector {
 		return new ScopedMessageCollector(source, this);
 	}
 }
@@ -132,12 +131,12 @@ export class PluginsMessageCollector implements IPluginsMessageCollector {
 		this._pushMessage(Severity.Info, source, message);
 	}
 
-	public scopeTo(source:string): IMessageCollector {
+	public scopeTo(source: string): IMessageCollector {
 		return new ScopedMessageCollector(source, this);
 	}
 }
 
-export function isValidPluginDescription(extensionFolderPath: string, pluginDescription:IPluginDescription, notices:string[]): boolean {
+export function isValidPluginDescription(extensionFolderPath: string, pluginDescription: IPluginDescription, notices: string[]): boolean {
 	if (!pluginDescription) {
 		notices.push(nls.localize('pluginDescription.empty', "Got empty extension description"));
 		return false;
@@ -148,6 +147,10 @@ export function isValidPluginDescription(extensionFolderPath: string, pluginDesc
 	}
 	if (typeof pluginDescription.name !== 'string') {
 		notices.push(nls.localize('pluginDescription.name', "property `{0}` is mandatory and must be of type `string`", 'name'));
+		return false;
+	}
+	if (typeof pluginDescription.version !== 'string') {
+		notices.push(nls.localize('pluginDescription.version', "property `{0}` is mandatory and must be of type `string`", 'version'));
 		return false;
 	}
 	if (!pluginDescription.engines) {
@@ -197,7 +200,7 @@ export function isValidPluginDescription(extensionFolderPath: string, pluginDesc
 interface IPluginDescriptionMap {
 	[pluginId: string]: IPluginDescription;
 }
-var hasOwnProperty = Object.hasOwnProperty;
+const hasOwnProperty = Object.hasOwnProperty;
 let schemaRegistry = <JSONContributionRegistry.IJSONContributionRegistry>Registry.as(JSONContributionRegistry.Extensions.JSONContribution);
 
 export interface IExtensionPointUser<T> {
@@ -207,7 +210,7 @@ export interface IExtensionPointUser<T> {
 }
 
 export interface IExtensionPointHandler<T> {
-	(extensions:IExtensionPointUser<T>[]): void;
+	(extensions: IExtensionPointUser<T>[]): void;
 }
 
 export interface IExtensionPoint<T> {
@@ -218,25 +221,25 @@ export interface IExtensionPoint<T> {
 export interface IPluginsRegistry {
 	registerPlugins(pluginDescriptions: IPluginDescription[]): void;
 
-	getPluginDescriptionsForActivationEvent(activationEvent:string): IPluginDescription[];
+	getPluginDescriptionsForActivationEvent(activationEvent: string): IPluginDescription[];
 	getAllPluginDescriptions(): IPluginDescription[];
-	getPluginDescription(pluginId:string): IPluginDescription;
+	getPluginDescription(pluginId: string): IPluginDescription;
 
-	registerOneTimeActivationEventListener(activationEvent: string, listener:IActivationEventListener): void;
-	triggerActivationEventListeners(activationEvent:string): void;
+	registerOneTimeActivationEventListener(activationEvent: string, listener: IActivationEventListener): void;
+	triggerActivationEventListeners(activationEvent: string): void;
 
-	registerExtensionPoint<T>(extensionPoint:string, jsonSchema: IJSONSchema): IExtensionPoint<T>;
-	handleExtensionPoints(messageHandler:IMessageHandler): void;
+	registerExtensionPoint<T>(extensionPoint: string, jsonSchema: IJSONSchema): IExtensionPoint<T>;
+	handleExtensionPoints(messageHandler: IMessageHandler): void;
 }
 
 class ExtensionPoint<T> implements IExtensionPoint<T> {
 
-	public name:string;
+	public name: string;
 	private _registry: PluginsRegistryImpl;
 	private _handler: IExtensionPointHandler<T>;
 	private _collector: IPluginsMessageCollector;
 
-	constructor(name:string, registry: PluginsRegistryImpl) {
+	constructor(name: string, registry: PluginsRegistryImpl) {
 		this.name = name;
 		this._registry = registry;
 		this._handler = null;
@@ -251,7 +254,7 @@ class ExtensionPoint<T> implements IExtensionPoint<T> {
 		this._handle();
 	}
 
-	handle(collector:IPluginsMessageCollector): void {
+	handle(collector: IPluginsMessageCollector): void {
 		this._collector = collector;
 		this._handle();
 	}
@@ -274,6 +277,97 @@ class ExtensionPoint<T> implements IExtensionPoint<T> {
 	}
 }
 
+
+
+const schemaId = 'vscode://schemas/vscode-extensions';
+const schema: IJSONSchema = {
+	default: {
+		'name': '{{name}}',
+		'description': '{{description}}',
+		'author': '{{author}}',
+		'version': '{{1.0.0}}',
+		'main': '{{pathToMain}}',
+		'dependencies': {}
+	},
+	properties: {
+		// engines: {
+		// 	required: [ 'vscode' ],
+		// 	properties: {
+		// 		'vscode': {
+		// 			type: 'string',
+		// 			description: nls.localize('vscode.extension.engines.vscode', 'Specifies that this package only runs inside VSCode of the given version.'),
+		// 		}
+		// 	}
+		// },
+		displayName: {
+			description: nls.localize('vscode.extension.displayName', 'The display name for the extension used in the VS Code gallery.'),
+			type: 'string'
+		},
+		categories: {
+			description: nls.localize('vscode.extension.categories', 'The categories used by the VS Code gallery to categorize the extension.'),
+			type: 'array',
+			items: {
+				type: 'string',
+				enum: ['Languages', 'Snippets', 'Linters', 'Themes', 'Debuggers', 'Other']
+			}
+		},
+		galleryBanner: {
+			type: 'object',
+			description: nls.localize('vscode.extension.galleryBanner', 'Banner used in the VS Code marketplace.'),
+			properties: {
+				color: {
+					description: nls.localize('vscode.extension.galleryBanner.color', 'The banner color on the VS Code marketplace page header.'),
+					type: 'string'
+				},
+				theme: {
+					description: nls.localize('vscode.extension.galleryBanner.theme', 'The color theme for the font used in the banner.'),
+					type: 'string',
+					enum: ['dark', 'light']
+				}
+			}
+		},
+		publisher: {
+			description: nls.localize('vscode.extension.publisher', 'The publisher of the VS Code extension.'),
+			type: 'string'
+		},
+		activationEvents: {
+			description: nls.localize('vscode.extension.activationEvents', 'Activation events for the VS Code extension.'),
+			type: 'array',
+			items: {
+				type: 'string'
+			}
+		},
+		extensionDependencies: {
+			description: nls.localize('vscode.extension.extensionDependencies', 'Dependencies to other extensions. The id of an extension is always ${publisher}.${name}. For example: vscode.csharp.'),
+			type: 'array',
+			items: {
+				type: 'string'
+			}
+		},
+		scripts: {
+			type: 'object',
+			properties: {
+				'vscode:prepublish': {
+					description: nls.localize('vscode.extension.scripts.prepublish', 'Script executed before the package is published as a VS Code extension.'),
+					type: 'string'
+				}
+			}
+		},
+		contributes: {
+			description: nls.localize('vscode.extension.contributes', 'All contributions of the VS Code extension represented by this package.'),
+			type: 'object',
+			properties: {
+				// extensions will fill in
+			},
+			default: {}
+		},
+		isAMD: {
+			description: nls.localize('vscode.extension.isAMD', 'Indicated whether VS Code should load your code as AMD or CommonJS. Default: false.'),
+			type: 'boolean'
+		}
+	}
+};
+
 interface IPointListenerEntry {
 	extensionPoint: string;
 	listener: IPointListener;
@@ -283,9 +377,9 @@ class PluginsRegistryImpl implements IPluginsRegistry {
 
 	private _pluginsMap: IPluginDescriptionMap;
 	private _pluginsArr: IPluginDescription[];
-	private _activationMap: {[activationEvent:string]:IPluginDescription[];};
+	private _activationMap: { [activationEvent: string]: IPluginDescription[]; };
 	private _pointListeners: IPointListenerEntry[];
-	private _oneTimeActivationEventListeners: { [activationEvent:string]: IActivationEventListener[]; }
+	private _oneTimeActivationEventListeners: { [activationEvent: string]: IActivationEventListener[]; };
 	private _extensionPoints: { [extPoint: string]: ExtensionPoint<any>; };
 
 	constructor() {
@@ -306,21 +400,21 @@ class PluginsRegistryImpl implements IPluginsRegistry {
 		this._triggerPointListener(entry, PluginsRegistryImpl._filterWithExtPoint(this.getAllPluginDescriptions(), point));
 	}
 
-	public registerExtensionPoint<T>(extensionPoint:string, jsonSchema: IJSONSchema): IExtensionPoint<T> {
+	public registerExtensionPoint<T>(extensionPoint: string, jsonSchema: IJSONSchema): IExtensionPoint<T> {
 		if (hasOwnProperty.call(this._extensionPoints, extensionPoint)) {
 			throw new Error('Duplicate extension point: ' + extensionPoint);
 		}
 		let result = new ExtensionPoint<T>(extensionPoint, this);
 		this._extensionPoints[extensionPoint] = result;
 
-		(<any>schema).properties.contributes.properties[extensionPoint] = jsonSchema;
+		schema.properties['contributes'].properties[extensionPoint] = jsonSchema;
 		schemaRegistry.registerSchema(schemaId, schema);
 
 		return result;
 	}
 
-	public handleExtensionPoints(messageHandler:IMessageHandler): void {
-		var collector = new PluginsMessageForwarder(messageHandler);
+	public handleExtensionPoints(messageHandler: IMessageHandler): void {
+		let collector = new PluginsMessageForwarder(messageHandler);
 
 		Object.keys(this._extensionPoints).forEach((extensionPointName) => {
 			this._extensionPoints[extensionPointName].handle(collector);
@@ -334,7 +428,7 @@ class PluginsRegistryImpl implements IPluginsRegistry {
 		}
 		try {
 			handler.listener(desc);
-		} catch(e) {
+		} catch (e) {
 			Errors.onUnexpectedError(e);
 		}
 	}
@@ -374,7 +468,7 @@ class PluginsRegistryImpl implements IPluginsRegistry {
 		});
 	}
 
-	public getPluginDescriptionsForActivationEvent(activationEvent:string): IPluginDescription[] {
+	public getPluginDescriptionsForActivationEvent(activationEvent: string): IPluginDescription[] {
 		if (!hasOwnProperty.call(this._activationMap, activationEvent)) {
 			return [];
 		}
@@ -385,30 +479,30 @@ class PluginsRegistryImpl implements IPluginsRegistry {
 		return this._pluginsArr.slice(0);
 	}
 
-	public getPluginDescription(pluginId:string): IPluginDescription {
+	public getPluginDescription(pluginId: string): IPluginDescription {
 		if (!hasOwnProperty.call(this._pluginsMap, pluginId)) {
 			return null;
 		}
 		return this._pluginsMap[pluginId];
 	}
 
-	public registerOneTimeActivationEventListener(activationEvent: string, listener:IActivationEventListener): void {
+	public registerOneTimeActivationEventListener(activationEvent: string, listener: IActivationEventListener): void {
 		if (!hasOwnProperty.call(this._oneTimeActivationEventListeners, activationEvent)) {
 			this._oneTimeActivationEventListeners[activationEvent] = [];
 		}
 		this._oneTimeActivationEventListeners[activationEvent].push(listener);
 	}
 
-	public triggerActivationEventListeners(activationEvent:string): void {
+	public triggerActivationEventListeners(activationEvent: string): void {
 		if (hasOwnProperty.call(this._oneTimeActivationEventListeners, activationEvent)) {
-			var listeners = this._oneTimeActivationEventListeners[activationEvent];
+			let listeners = this._oneTimeActivationEventListeners[activationEvent];
 			delete this._oneTimeActivationEventListeners[activationEvent];
 
 			for (let i = 0, len = listeners.length; i < len; i++) {
 				let listener = listeners[i];
 				try {
 					listener();
-				} catch(e) {
+				} catch (e) {
 					Errors.onUnexpectedError(e);
 				}
 			}
@@ -421,7 +515,7 @@ function _isStringArray(arr: string[]): boolean {
 	if (!Array.isArray(arr)) {
 		return false;
 	}
-	for (var i = 0, len = arr.length; i < len; i++) {
+	for (let i = 0, len = arr.length; i < len; i++) {
 		if (typeof arr[i] !== 'string') {
 			return false;
 		}
@@ -429,346 +523,11 @@ function _isStringArray(arr: string[]): boolean {
 	return true;
 }
 
-var Extensions = {
+const Extensions = {
 	PluginsRegistry: 'PluginsRegistry'
 };
 Registry.add(Extensions.PluginsRegistry, new PluginsRegistryImpl());
-export var PluginsRegistry:IPluginsRegistry = Registry.as(Extensions.PluginsRegistry);
-
-var schemaId = 'local://schemas/vscode-extension';
-var schema : IJSONSchema = {
-	default: {
-		'name': '{{name}}',
-		'description': '{{description}}',
-		'author': '{{author}}',
-		'version': '{{1.0.0}}',
-		'main': '{{pathToMain}}',
-		'dependencies': {}
-	},
-	// default: { name: '{{}}', version: '0.0.1', engines: { 'vscode': '*'}, contributes: { }},
-	properties: {
-		// engines: {
-		// 	required: [ 'vscode' ],
-		// 	properties: {
-		// 		'vscode': {
-		// 			type: 'string',
-		// 			description: nls.localize('vscode.extension.engines.vscode', 'Specifies that this package only runs inside VSCode of the given version.'),
-		// 		}
-		// 	}
-		// },
-		publisher: {
-			description: nls.localize('vscode.extension.publisher', 'The publisher of the VSCode extension.'),
-			type: 'string'
-		},
-		activationEvents: {
-			description: nls.localize('vscode.extension.activationEvents', 'Activation events for the VSCode extension.'),
-			type: 'array',
-			items: {
-				type: 'string'
-			}
-		},
-		extensionDependencies: {
-			description: nls.localize('vscode.extension.extensionDependencies', 'Dependencies to other extensions.'),
-			type: 'array',
-			items: {
-				type: 'string'
-			}
-		},
-		scripts: {
-			type: 'object',
-			properties: {
-				'vscode:prepublish': {
-					description: nls.localize('vscode.extension.scripts.prepublish', 'Script executed before the package is published as a VSCode extension.'),
-					type: 'string'
-				}
-			}
-		},
-		contributes: {
-			description: nls.localize('vscode.extension.contributes', 'All contributions of the VSCode extension represented by this package.'),
-			type: 'object',
-			default: { 'languages': [{ 'id': '', 'extensions': [] }] },
-			properties: {
-				// languages: {
-				// 	description: nls.localize('vscode.extension.contributes.languages', 'Contributes language declarations.'),
-				// 	type: 'array',
-				// 	default: [{ id: '', aliases: [], extensions: [] }],
-				// 	items: {
-				// 		type: 'object',
-				// 		default: { id: '', extensions: [] },
-				// 		properties: {
-				// 			id: {
-				// 				description: nls.localize('vscode.extension.contributes.languages.id', 'ID of the language.'),
-				// 				type: 'string'
-				// 			},
-				// 			aliases: {
-				// 				description: nls.localize('vscode.extension.contributes.languages.aliases', 'Name aliases for the language.'),
-				// 				type: 'array',
-				// 				items: {
-				// 					type: 'string'
-				// 				}
-				// 			},
-				// 			extensions: {
-				// 				description: nls.localize('vscode.extension.contributes.languages.extensions', 'File extensions associated to the language.'),
-				// 				default: ['.foo'],
-				// 				type: 'array',
-				// 				items: {
-				// 					type: 'string'
-				// 				}
-				// 			},
-				// 			filenames: {
-				// 				description: nls.localize('vscode.extension.contributes.languages.filenames', 'File names associated to the language.'),
-				// 				type: 'array',
-				// 				items: {
-				// 					type: 'string'
-				// 				}
-				// 			},
-				// 			mimetypes: {
-				// 				description: nls.localize('vscode.extension.contributes.languages.mimetypes', 'Mime types associated to the language.'),
-				// 				type: 'array',
-				// 				items: {
-				// 					type: 'string'
-				// 				}
-				// 			},
-				// 			firstLine: {
-				// 				description: nls.localize('vscode.extension.contributes.languages.firstLine', 'A regular expression matching the first line of a file of the language.'),
-				// 				type: 'string'
-				// 			},
-				// 		}
-				// 	}
-				// },
-				// grammars: {
-				// 	description: nls.localize('vscode.extension.contributes.grammars', 'Contributes textmate tokenizers.'),
-				// 	type: 'array',
-				// 	default: [{ id: '', extensions: [] }],
-				// 	items: {
-				// 		type: 'object',
-				// 		default: { language: '{{id}}', scopeName: 'source.{{id}}', path: './syntaxes/{{id}}.tmLanguage.'},
-				// 		properties: {
-				// 			language: {
-				// 				description: nls.localize('vscode.extension.contributes.grammars.language', 'Language id for which this syntax is contributed to.'),
-				// 				type: 'string'
-				// 			},
-				// 			scopeName: {
-				// 				description: nls.localize('vscode.extension.contributes.grammars.scopeName', 'Textmate scope name used by the tmLanguage file.'),
-				// 				type: 'string'
-				// 			},
-				// 			path: {
-				// 				description: nls.localize('vscode.extension.contributes.grammars.path', 'Path of the tmLanguage file. The path is relative to the extension folder and typically starts with \'./syntaxes/\'.'),
-				// 				type: 'string'
-				// 			}
-				// 		}
-				// 	}
-				// },
-				// themes: {
-				// 	description: nls.localize('vscode.extension.contributes.themes', 'Contributes textmate color themes.'),
-				// 	type: 'array',
-				// 	default: [{ label: '{{label}}', uiTheme: 'vs-dark', path: './themes/{{id}}.tmTheme.'}],
-				// 	items: {
-				// 		type: 'object',
-				// 		default: { label: '{{label}}', uiTheme: 'vs-dark', path: './themes/{{id}}.tmTheme.'},
-				// 		properties: {
-				// 			label: {
-				// 				description: nls.localize('vscode.extension.contributes.themes.label', 'Label of the color theme as shown in the UI.'),
-				// 				type: 'string'
-				// 			},
-				// 			uiTheme: {
-				// 				description: nls.localize('vscode.extension.contributes.themes.uiTheme', 'Base theme defining the colors around the editor: \'vs\' is the light color theme, \'vs-dark\' is the dark color theme.'),
-				// 				enum: [ 'vs', 'vs-dark']
-				// 			},
-				// 			path: {
-				// 				description: nls.localize('vscode.extension.contributes.themes.path', 'Path of the tmTheme file. The path is relative to the extension folder and is typically \'./themes/themeFile.tmTheme\'.'),
-				// 				type: 'string'
-				// 			}
-				// 		}
-				// 	}
-				// },
-				// debuggers: {
-				// 	description: nls.localize('vscode.extension.contributes.debuggers', 'Contributes debug adapters.'),
-				// 	type: 'array',
-				// 	default: [{ type: '', extensions: [] }],
-				// 	items: {
-				// 		type: 'object',
-				// 		default: { type: '', program: '', runtime: '', enableBreakpointsFor: { languageIds: [ '' ] } },
-				// 		properties: {
-				// 			type: {
-				// 				description: nls.localize('vscode.extension.contributes.debuggers.type', 'Unique identifier for this debug adapter.'),
-				// 				type: 'string'
-				// 			},
-				// 			enableBreakpointsFor: {
-				// 				description: nls.localize('vscode.extension.contributes.debuggers.enableBreakpointsFor', 'Allow breakpoints for these languages.'),
-				// 				type: 'object',
-				// 				properties: {
-				// 					languageIds : {
-				// 						description: nls.localize('vscode.extension.contributes.debuggers.enableBreakpointsFor.languageIds', 'List of languages.'),
-				// 						type: 'array',
-				// 						items: {
-				// 							type: 'string'
-				// 						}
-				// 					}
-				// 				}
-				// 			},
-				// 			program: {
-				// 				description: nls.localize('vscode.extension.contributes.debuggers.program', 'Path to the debug adapter program. Path is either absolute or relative to the extension folder.'),
-				// 				type: 'string'
-				// 			},
-				// 			runtime : {
-				// 				description: nls.localize('vscode.extension.contributes.debuggers.runtime', 'Optional runtime in case the program attribute is not an executable but requires a runtime. Supported runtimes are \'node\' or \'mono\'.'),
-				// 				type: 'string'
-				// 			},
-				// 			windows: {
-				// 				description: nls.localize('vscode.extension.contributes.debuggers.windows', 'Windows specific settings.'),
-				// 				type: 'object',
-				// 				properties: {
-				// 					runtime : {
-				// 						description: nls.localize('vscode.extension.contributes.debuggers.windows.runtime', 'Runtime used for Windows.'),
-				// 						type: 'string'
-				// 					}
-				// 				}
-				// 			},
-				// 			osx: {
-				// 				description: nls.localize('vscode.extension.contributes.debuggers.osx', 'OS X specific settings.'),
-				// 				type: 'object',
-				// 				properties: {
-				// 					runtime : {
-				// 						description: nls.localize('vscode.extension.contributes.debuggers.osx.runtime', 'Runtime used for OSX.'),
-				// 						type: 'string'
-				// 					}
-				// 				}
-				// 			},
-				// 			linux: {
-				// 				description: nls.localize('vscode.extension.contributes.debuggers.linux', 'Linux specific settings.'),
-				// 				type: 'object',
-				// 				properties: {
-				// 					runtime : {
-				// 						description: nls.localize('vscode.extension.contributes.debuggers.linux.runtime', 'Runtime used for Linux.'),
-				// 						type: 'string'
-				// 					}
-				// 				}
-				// 			}
-				// 		}
-				// 	}
-				// },
-				// configuration: {
-				// 	description: nls.localize('vscode.extension.contributes.configuration', 'Contributes configuration settings.'),
-				// 	type: 'object',
-				// 	default: { title: '', type: 'object', properties: {}},
-				// 	properties: {
-				// 		title: {
-				// 			description: nls.localize('vscode.extension.contributes.configuration.title', 'A summary of the settings. This label will be used in the settings file as separating comment.'),
-				// 			type: 'string'
-				// 		},
-				// 		type: {
-				// 			description: nls.localize('vscode.extension.contributes.configuration.type', 'Type of the configuration, needs to be \'object\''),
-				// 			enum: ['object'],
-				// 		},
-				// 		properties: {
-				// 			description: nls.localize('vscode.extension.contributes.configuration.properties', 'Description of the configuration properties.'),
-				// 			type: 'object'
-				// 		}
-				// 	}
-				// },
-				// keybindings: {
-				// 	description: nls.localize('vscode.extension.contributes.keybindings', "Contributes keybindings."),
-				// 	oneOf: [
-				// 		{
-				// 			$ref: '#/definitions/keybindingType'
-				// 		},
-				// 		{
-				// 			type: 'array',
-				// 			items: {
-				// 				$ref: '#/definitions/keybindingType'
-				// 			}
-				// 		}
-				// 	]
-				// },
-				// commands: {
-				// 	description: nls.localize('vscode.extension.contributes.commands', "Contributes commands to the command palette."),
-				// 	oneOf: [
-				// 		{
-				// 			$ref: '#/definitions/commandType'
-				// 		},
-				// 		{
-				// 			type: 'array',
-				// 			items: {
-				// 				$ref: '#/definitions/commandType'
-				// 			}
-				// 		}
-				// 	]
-				// },
-				outputChannels: {
-					description: nls.localize('vscode.extension.contributes.outputChannels', "Contributes output views."),
-					type: 'array',
-					items: {
-						type: 'string',
-						description: nls.localize('vscode.extension.contributes.outputChannels', "The label of the output view."),
-					}
-				}
-			}
-		}
-	},
-	definitions: {
-		// stringOrStringArray: {
-		// 	oneOf:  [
-		// 		{
-		// 			type: 'string',
-		// 		},
-		// 		{
-		// 			type: 'array',
-		// 			items: {
-		// 				type: 'string'
-		// 			}
-		// 		}
-		// 	]
-		// },
-		// keybindingType: {
-		// 	type: 'object',
-		// 	default: { command: '', key: '' },
-		// 	properties: {
-		// 		command: {
-		// 			description: nls.localize('vscode.extension.contributes.keybindings.command', 'Identifier of the command to run when keybinding is triggered.'),
-		// 			type: 'string'
-		// 		},
-		// 		key: {
-		// 			description: nls.localize('vscode.extension.contributes.keybindings.key', 'Key or key sequence (separate keys with plus-sign and sequences with space, e.g Ctrl+O and Ctrl+L L for a chord'),
-		// 			type: 'string'
-		// 		},
-		// 		mac: {
-		// 			description: nls.localize('vscode.extension.contributes.keybindings.mac', 'Mac specific key or key sequence.'),
-		// 			type: 'string'
-		// 		},
-		// 		linux: {
-		// 			description: nls.localize('vscode.extension.contributes.keybindings.linux', 'Linux specific key or key sequence.'),
-		// 			type: 'string'
-		// 		},
-		// 		win: {
-		// 			description: nls.localize('vscode.extension.contributes.keybindings.win', 'Windows specific key or key sequence.'),
-		// 			type: 'string'
-		// 		},
-		// 		when: {
-		// 			description: nls.localize('vscode.extension.contributes.keybindings.when', 'Condition when the key is active.'),
-		// 			type: 'string'
-		// 		}
-		// 	}
-		// },
-		// commandType: {
-		// 	type: 'object',
-		// 	properties: {
-		// 		command: {
-		// 			description: nls.localize('vscode.extension.contributes.commandType.command', 'Identifier of the command to execute'),
-		// 			type: 'string'
-		// 		},
-		// 		title: {
-		// 			description: nls.localize('vscode.extension.contributes.commandType.title', 'Title by which the command is represented in the UI.'),
-		// 			type: 'string'
-		// 		},
-		// 		category: {
-		// 			description: nls.localize('vscode.extension.contributes.commandType.category', '(Optional) category string by the command is grouped in the UI'),
-		// 			type: 'string'
-		// 		}
-		// 	}
-		// }
-	}
-}
+export const PluginsRegistry: IPluginsRegistry = Registry.as(Extensions.PluginsRegistry);
 
 schemaRegistry.registerSchema(schemaId, schema);
 schemaRegistry.addSchemaFileAssociation('/package.json', schemaId);

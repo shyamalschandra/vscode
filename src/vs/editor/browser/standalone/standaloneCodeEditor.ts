@@ -12,17 +12,13 @@ import EditorBrowser = require('vs/editor/browser/editorBrowser');
 import EditorCommon = require('vs/editor/common/editorCommon');
 import Modes = require('vs/editor/common/modes');
 import standaloneServices = require('vs/editor/browser/standalone/standaloneServices');
-import Platform = require('vs/platform/platform');
-import Network = require('vs/base/common/network');
-import Model = require('vs/editor/common/model/model');
+import URI from 'vs/base/common/uri';
 import Lifecycle = require('vs/base/common/lifecycle');
 import MonarchTypes = require('vs/editor/common/modes/monarch/monarchTypes');
 import InstantiationService = require('vs/platform/instantiation/common/instantiationService');
 import DiffEditorWidget = require('vs/editor/browser/widget/diffEditorWidget');
 import {DefaultConfig} from 'vs/editor/common/config/defaultConfig';
-import {IPluginDescription} from 'vs/platform/plugins/common/plugins';
 import {PluginsRegistry} from 'vs/platform/plugins/common/pluginsRegistry';
-import monarch = require('vs/editor/common/modes/monarch/monarch');
 import vscode = require('vscode');
 import {RemoteTelemetryServiceHelper} from 'vs/platform/telemetry/common/abstractRemoteTelemetryService';
 import {IEditorService} from 'vs/platform/editor/common/editor';
@@ -36,10 +32,11 @@ import {IModelService} from 'vs/editor/common/services/modelService';
 import colorizer = require('vs/editor/browser/standalone/colorizer');
 import {IEditorModesRegistry, Extensions} from 'vs/editor/common/modes/modesRegistry';
 import {Registry} from 'vs/platform/platform';
-import {createAsyncDescriptor0} from 'vs/platform/instantiation/common/descriptors';
 import {LanguageExtensions, ILanguageExtensionPoint} from 'vs/editor/common/modes/languageExtensionPoint';
 import {AbstractKeybindingService} from 'vs/platform/keybinding/browser/keybindingServiceImpl';
 import {ICodeEditorService} from 'vs/editor/common/services/codeEditorService';
+import {IJSONSchema} from 'vs/base/common/jsonSchema';
+import * as JSONContributionRegistry from 'vs/platform/jsonschemas/common/jsonContributionRegistry';
 
 // Set defaults for standalone editor
 DefaultConfig.editor.wrappingIndent = 'none';
@@ -346,7 +343,7 @@ function prepareServices(domElement: HTMLElement, services: standaloneServices.I
 	};
 }
 
-function createModelWithRegistryMode(modelService:IModelService, modeService:IModeService, value:string, modeName:string, associatedResource?:Network.URL): EditorCommon.IModel {
+function createModelWithRegistryMode(modelService:IModelService, modeService:IModeService, value:string, modeName:string, associatedResource?:URI): EditorCommon.IModel {
 	var modeInformation = modeService.lookup(modeName);
 	if (modeInformation.length > 0) {
 		// Force usage of the first existing mode
@@ -362,13 +359,13 @@ function createModelWithRegistryMode(modelService:IModelService, modeService:IMo
 	return modelService.createModel(value, modeService.getOrCreateMode(modeName), associatedResource);
 }
 
-export function createModel(value:string, mode:string|MonarchTypes.ILanguage|Modes.IMode, associatedResource?:Network.URL|string): EditorCommon.IModel {
+export function createModel(value:string, mode:string|MonarchTypes.ILanguage|Modes.IMode, associatedResource?:URI|string): EditorCommon.IModel {
 	startup.initStaticServicesIfNecessary();
 	var modelService = standaloneServices.ensureStaticPlatformServices(null).modelService;
 
-	var resource:Network.URL;
+	var resource:URI;
 	if (typeof associatedResource === 'string') {
-		resource = new Network.URL(associatedResource);
+		resource = URI.parse(associatedResource);
 	} else {
 		// must be a URL
 		resource = associatedResource;
@@ -405,7 +402,7 @@ export function configureMode(modeId: string, options: any): void {
 
 export function registerWorkerParticipant(modeId:string, moduleName:string, ctorName:string): void {
 	var modeRegistry = <IEditorModesRegistry> Registry.as(Extensions.EditorModes);
- 	modeRegistry.registerWorkerParticipant(modeId, createAsyncDescriptor0<Modes.IWorkerParticipant>(moduleName, ctorName));
+	modeRegistry.registerWorkerParticipant(modeId, moduleName, ctorName);
 }
 
 export function getAPI(): typeof vscode {
@@ -449,6 +446,11 @@ export function registerStandaloneLanguage(language:ILanguageExtensionPoint, def
 			console.error('Cannot find module ' + defModule, err);
 		});
 	});
+}
+
+export function registerStandaloneSchema(uri:string, schema:IJSONSchema) {
+	let schemaRegistry = <JSONContributionRegistry.IJSONContributionRegistry>Registry.as(JSONContributionRegistry.Extensions.JSONContribution);
+	schemaRegistry.registerSchema(uri, schema);
 }
 
 export function colorizeElement(domNode:HTMLElement, options:colorizer.IColorizerElementOptions): TPromise<void> {

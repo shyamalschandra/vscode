@@ -5,20 +5,20 @@
 
 import lifecycle = require('vs/base/common/lifecycle');
 import errors = require('vs/base/common/errors');
-import { Promise } from 'vs/base/common/winjs.base';
+import { TPromise } from 'vs/base/common/winjs.base';
 import dom = require('vs/base/browser/dom');
-import actions = require('vs/base/common/actions');
-import actionbar = require('vs/base/browser/ui/actionbar/actionbar');
+import { IAction } from 'vs/base/common/actions';
+import { BaseActionItem } from 'vs/base/browser/ui/actionbar/actionbar';
 import { IDebugService, ServiceEvents, State } from 'vs/workbench/parts/debug/common/debug';
 import { IConfigurationService, ConfigurationServiceEventTypes } from 'vs/platform/configuration/common/configuration';
 
-export class SelectConfigActionItem extends actionbar.BaseActionItem {
+export class SelectConfigActionItem extends BaseActionItem {
 
 	private select: HTMLSelectElement;
 	private toDispose: lifecycle.IDisposable[];
 
 	constructor(
-		action: actions.IAction,
+		action: IAction,
 		@IDebugService private debugService: IDebugService,
 		@IConfigurationService configurationService: IConfigurationService
 	) {
@@ -49,8 +49,20 @@ export class SelectConfigActionItem extends actionbar.BaseActionItem {
 		this.setOptions().done(null, errors.onUnexpectedError);
 	}
 
-	private setOptions(): Promise {
-		var previousSelectedIndex = this.select.selectedIndex;
+	public focus(): void {
+		if (this.select) {
+			this.select.focus();
+		}
+	}
+
+	public blur(): void {
+		if (this.select) {
+			this.select.blur();
+		}
+	}
+
+	private setOptions(): TPromise<any> {
+		let previousSelectedIndex = this.select.selectedIndex;
 		this.select.options.length = 0;
 
 		return this.debugService.loadLaunchConfig().then(config => {
@@ -60,13 +72,14 @@ export class SelectConfigActionItem extends actionbar.BaseActionItem {
 				return;
 			}
 
-			var configurations = config.configurations;
+			const configurations = config.configurations;
 			this.select.disabled = configurations.length < 1;
-			var found = false;
-			var configuration = this.debugService.getConfiguration();
-			for (var i = 0; i < configurations.length; i++) {
+
+			let found = false;
+			const configurationName = this.debugService.getConfigurationName();
+			for (let i = 0; i < configurations.length; i++) {
 				this.select.options.add(this.createOption(configurations[i].name));
-				if (configuration && configuration.name === configurations[i].name) {
+				if (configurationName === configurations[i].name) {
 					this.select.selectedIndex = i;
 					found = true;
 				}
@@ -83,7 +96,7 @@ export class SelectConfigActionItem extends actionbar.BaseActionItem {
 	}
 
 	private createOption(value: string): HTMLOptionElement {
-		var option = document.createElement('option');
+		const option = document.createElement('option');
 		option.value = value;
 		option.text = value;
 

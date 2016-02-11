@@ -91,7 +91,7 @@ export class JSMode extends typescriptMode.TypeScriptMode<javascriptWorker.JavaS
 				},
 				{
 					// e.g.  * ...|
-					beforeText: /^(\t|(\ \ ))*\ \*\ ([^\*]|\*(?!\/))*$/,
+					beforeText: /^(\t|(\ \ ))*\ \*(\ ([^\*]|\*(?!\/))*)?$/,
 					action: { indentAction: Modes.IndentAction.None, appendText: '* ' }
 				},
 				{
@@ -105,7 +105,6 @@ export class JSMode extends typescriptMode.TypeScriptMode<javascriptWorker.JavaS
 		this.suggestSupport = new supports.SuggestSupport(this, {
 			triggerCharacters: ['.'],
 			excludeTokens: ['string', 'comment', 'number', 'numeric'],
-			sortBy: [{type:'reference', partSeparator: '/'}],
 			suggest: (resource, position) => this.suggest(resource, position),
 			getSuggestionDetails: (resource, position, suggestion) => this.getSuggestionDetails(resource, position, suggestion)});
 	}
@@ -119,7 +118,7 @@ export class JSMode extends typescriptMode.TypeScriptMode<javascriptWorker.JavaS
 				});
 			});
 		} else {
-			return winjs.Promise.as(this);
+			return winjs.TPromise.as(this);
 		}
 	}
 

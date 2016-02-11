@@ -14,7 +14,7 @@ import errors = require('vs/base/common/errors');
 import mime = require('vs/base/common/mime');
 import paths = require('vs/base/common/paths');
 import ee = require('vs/base/common/eventEmitter');
-import wbevents = require('vs/workbench/browser/events');
+import wbevents = require('vs/workbench/common/events');
 import WorkbenchEditorCommon = require('vs/workbench/common/editor');
 import git = require('vs/workbench/parts/git/common/git');
 import model = require('vs/workbench/parts/git/common/gitModel');
@@ -32,6 +32,7 @@ import {IInstantiationService} from 'vs/platform/instantiation/common/instantiat
 import {IMessageService} from 'vs/platform/message/common/message';
 import {IWorkspaceContextService} from 'vs/platform/workspace/common/workspace';
 import {ILifecycleService} from 'vs/platform/lifecycle/common/lifecycle';
+import URI from 'vs/base/common/uri';
 
 function toReadablePath(path: string): string {
 	if (!platform.isWindows) {
@@ -110,18 +111,18 @@ class EditorInputCache
 					return winjs.Promise.wrapError(error);
 				}
 
-				return winjs.Promise.as(rightInput);
+				return winjs.TPromise.as(rightInput);
 			}
 
 			switch (status.getStatus()) {
 				case git.Status.INDEX_MODIFIED:
-					return winjs.Promise.as(new giteditorinputs.GitIndexDiffEditorInput(fileSegment, nls.localize('gitIndexChanges', "{0} - Changes on index", folderSegment), leftInput, rightInput, status));
+					return winjs.TPromise.as(new giteditorinputs.GitIndexDiffEditorInput(fileSegment, nls.localize('gitIndexChanges', "{0} - Changes on index", folderSegment), leftInput, rightInput, status));
 				case git.Status.INDEX_RENAMED:
-					return winjs.Promise.as(new giteditorinputs.GitIndexDiffEditorInput(fileSegment, nls.localize('gitIndexChangesRenamed', "{0} - Renamed - Changes on index", folderSegment), leftInput, rightInput, status));
+					return winjs.TPromise.as(new giteditorinputs.GitIndexDiffEditorInput(fileSegment, nls.localize('gitIndexChangesRenamed', "{0} - Renamed - Changes on index", folderSegment), leftInput, rightInput, status));
 				case git.Status.MODIFIED:
-					return winjs.Promise.as(new giteditorinputs.GitWorkingTreeDiffEditorInput(fileSegment, nls.localize('workingTreeChanges', "{0} - Changes on working tree", folderSegment), leftInput, rightInput, status));
+					return winjs.TPromise.as(new giteditorinputs.GitWorkingTreeDiffEditorInput(fileSegment, nls.localize('workingTreeChanges', "{0} - Changes on working tree", folderSegment), leftInput, rightInput, status));
 				default:
-					return winjs.Promise.as(new giteditorinputs.GitDiffEditorInput(fileSegment, nls.localize('gitMergeChanges', "{0} - Merge changes", folderSegment), leftInput, rightInput, status));
+					return winjs.TPromise.as(new giteditorinputs.GitDiffEditorInput(fileSegment, nls.localize('gitMergeChanges', "{0} - Merge changes", folderSegment), leftInput, rightInput, status));
 			}
 		}).then((editorInput) => {
 			return editorInput;
@@ -153,14 +154,14 @@ class EditorInputCache
 				return this.gitService.show(path, status, 'HEAD', status.getMimetype());
 
 			default:
-				return winjs.Promise.as(null);
+				return winjs.TPromise.as(null);
 		}
 	}
 
 	private createRightInput(status: git.IFileStatus): winjs.Promise {
-		var path = status.getPath();
-		var resource = this.contextService.toResource(path);
-		var model = this.gitService.getModel();
+		const model = this.gitService.getModel();
+		const path = status.getPath();
+		let resource = URI.file(paths.join(model.getRepositoryRoot(), path));
 
 		switch (status.getStatus()) {
 			case git.Status.INDEX_MODIFIED:
@@ -181,16 +182,16 @@ class EditorInputCache
 				var indexStatus = model.getStatus().find(path, git.StatusType.INDEX);
 
 				if (indexStatus && indexStatus.getStatus() === git.Status.INDEX_RENAMED) {
-					return this.editorService.inputToType({ resource: this.contextService.toResource(indexStatus.getRename()) });
+					resource = URI.file(paths.join(model.getRepositoryRoot(), indexStatus.getRename()));
 				}
 
-				return this.editorService.inputToType({ resource: resource });
+				return this.editorService.inputToType({ resource });
 
 			case git.Status.BOTH_MODIFIED:
-				return this.editorService.inputToType({ resource: resource });
+				return this.editorService.inputToType({ resource });
 
 			default:
-				return winjs.Promise.as(null);
+				return winjs.TPromise.as(null);
 		}
 	}
 
@@ -350,7 +351,7 @@ export class AutoFetcher implements git.IAutoFetcher, lifecycle.IDisposable
 
 		this.currentRequest.then(() => {
 			this._state = git.AutoFetcherState.Active;
-			this.currentRequest = winjs.Promise.timeout(this.timeout);
+			this.currentRequest = winjs.TPromise.timeout(this.timeout);
 			return this.currentRequest;
 		}).then(() => this.loop(), (err) => this.deactivate());
 	}
@@ -388,10 +389,19 @@ export class GitService extends ee.EventEmitter
 	private remoteListenerUnbind:ee.ListenerUnbind;
 	private toDispose: lifecycle.IDisposable[];
 	private needsRefresh: boolean;
-	private refreshDelayer: async.ThrottledDelayer;
+	private refreshDelayer: async.ThrottledDelayer<void>;
 	private autoFetcher: AutoFetcher;
 
-	constructor(raw: git.IRawGitService, @IInstantiationService instantiationService: IInstantiationService, @IEventService eventService: IEventService, @IMessageService messageService: IMessageService, @IWorkbenchEditorService editorService: IWorkbenchEditorService, @IOutputService outputService: IOutputService, @IWorkspaceContextService contextService: IWorkspaceContextService, @ILifecycleService lifecycleService: ILifecycleService) {
+	constructor(
+		raw: git.IRawGitService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IEventService eventService: IEventService,
+		@IMessageService messageService: IMessageService,
+		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
+		@IOutputService outputService: IOutputService,
+		@IWorkspaceContextService contextService: IWorkspaceContextService,
+		@ILifecycleService lifecycleService: ILifecycleService
+	) {
 		super();
 
 		this.instantiationService = instantiationService;
@@ -409,7 +419,7 @@ export class GitService extends ee.EventEmitter
 		this.toDispose = [];
 
 		this.needsRefresh = false;
-		this.refreshDelayer = new async.PeriodThrottledDelayer(500, 10000);
+		this.refreshDelayer = new async.PeriodThrottledDelayer<void>(500, 10000);
 		this.autoFetcher = this.instantiationService.createInstance(AutoFetcher, this);
 
 		this.registerListeners();
@@ -423,7 +433,7 @@ export class GitService extends ee.EventEmitter
 		this.toDispose.push(this.eventService.addListener2(FileEventType.FILE_CHANGES,(e) => this.onFileChanges(e)));
 		this.toDispose.push(this.eventService.addListener2(filesCommon.EventType.FILE_SAVED, (e) => this.onLocalFileChange(e)));
 		this.toDispose.push(this.eventService.addListener2(filesCommon.EventType.FILE_REVERTED, (e) => this.onLocalFileChange(e)));
-		this.lifecycleService.onShutdown.add(this.dispose, this);
+		this.lifecycleService.onShutdown(this.dispose, this);
 	}
 
 	private triggerStatus(force: boolean = false): void {
@@ -543,16 +553,23 @@ export class GitService extends ee.EventEmitter
 		return this.run(git.ServiceOperations.BACKGROUND_FETCH, () => this.raw.fetch());
 	}
 
-	public pull(): winjs.Promise {
-		return this.run(git.ServiceOperations.PULL, () => this.raw.pull());
+	public pull(rebase?: boolean): winjs.Promise {
+		return this.run(git.ServiceOperations.PULL, () => this.raw.pull(rebase));
 	}
 
-	public push(): winjs.Promise {
-		return this.run(git.ServiceOperations.PUSH, () => this.raw.push());
+	public push(remote?: string, name?: string, options?:git.IPushOptions): winjs.Promise {
+		return this.run(git.ServiceOperations.PUSH, () => this.raw.push(remote, name, options));
 	}
 
-	public sync(): winjs.Promise {
-		return this.run(git.ServiceOperations.SYNC, () => this.raw.sync());
+	public sync(rebase?: boolean): winjs.Promise {
+		const head = this.model.getHEAD();
+		const isAhead = head && head.upstream && !!head.ahead;
+
+		if (!isAhead) {
+			return this.run(git.ServiceOperations.SYNC, () => this.raw.pull(rebase));
+		} else {
+			return this.run(git.ServiceOperations.SYNC, () => this.raw.sync());
+		}
 	}
 
 	public commit(message:string, amend: boolean = false, stage: boolean = false): winjs.Promise {
@@ -567,10 +584,10 @@ export class GitService extends ee.EventEmitter
 		return this.raw.serviceState().then(state => {
 			if (state === git.RawServiceState.GitNotFound) {
 				this.transition(git.ServiceState.NoGit);
-				return winjs.Promise.as(null);
+				return winjs.TPromise.as(null);
 			} else if (state === git.RawServiceState.Disabled) {
 				this.transition(git.ServiceState.Disabled);
-				return winjs.Promise.as(null);
+				return winjs.TPromise.as(null);
 			} else {
 				return this._run(operationId, fn);
 			}
@@ -620,7 +637,7 @@ export class GitService extends ee.EventEmitter
 
 			if (gitErrorCode === git.GitErrorCodes.NotAtRepositoryRoot) {
 				this.transition(git.ServiceState.NotAtRepoRoot);
-				return winjs.Promise.as(this.model);
+				return winjs.TPromise.as(this.model);
 			}
 
 			this.emit(git.ServiceEvents.ERROR, e);
@@ -629,20 +646,20 @@ export class GitService extends ee.EventEmitter
 			if (gitErrorCode === git.GitErrorCodes.NoUserNameConfigured || gitErrorCode === git.GitErrorCodes.NoUserEmailConfigured) {
 				this.messageService.show(severity.Warning, nls.localize('configureUsernameEmail', "Please configure your git user name and e-mail."));
 
-				return winjs.Promise.as(null);
+				return winjs.TPromise.as(null);
 
 			} else if (gitErrorCode === git.GitErrorCodes.BadConfigFile) {
 				this.messageService.show(severity.Error, nls.localize('badConfigFile', "Git {0}", e.message));
-				return winjs.Promise.as(null);
+				return winjs.TPromise.as(null);
 
 			} else if (gitErrorCode === git.GitErrorCodes.UnmergedChanges) {
 				this.messageService.show(severity.Warning, nls.localize('unmergedChanges', "You should first resolve the unmerged changes before committing your changes."));
-				return winjs.Promise.as(null);
+				return winjs.TPromise.as(null);
 			}
 
 			var error: Error;
 			var showOutputAction = new actions.Action('show.gitOutput', nls.localize('showOutput', "Show Output"), null, true, () => this.outputService.showOutput('Git'));
-			var cancelAction = new actions.Action('close.message', nls.localize('cancel', "Cancel"), null, true, ()=>winjs.Promise.as(true));
+			var cancelAction = new actions.Action('close.message', nls.localize('cancel', "Cancel"), null, true, ()=>winjs.TPromise.as(true));
 
 			error = errors.create(
 				nls.localize('checkNativeConsole', "There was an issue running a git operation. Please review the output or use a console to check the state of your repository."),
@@ -686,17 +703,17 @@ export class GitService extends ee.EventEmitter
 				mimetypes = mime.guessMimeTypes(path); // guess from path if our detection did not yield results
 			}
 
-			// Binary: our story is weak here for binary files on the index. Since we run nativelyx, we do not have a way currently
+			// Binary: our story is weak here for binary files on the index. Since we run natively, we do not have a way currently
 			// to e.g. show images as binary inside the renderer because images need to be served through a URL to show. We could revisit this by
 			// allowing to use data URLs for resource inputs to render them. However, this would mean potentially loading a large file into memory
 			//
 			// Our solution now is to detect binary files and immediately return an input that is flagged as binary unknown mime type.
 			if (mime.isBinaryMime(mime.guessMimeTypes(path)) || mimetypes.indexOf(mime.MIME_BINARY) >= 0) {
-				return winjs.Promise.as(this.instantiationService.createInstance(giteditorinputs.GitIndexEditorInput, fileSegment, description, null /* no URL */, mime.MIME_BINARY, status));
+				return winjs.Promise.wrapError(new Error('The resource seems to be binary and cannot be displayed'));
 			}
 
 			// Text
-			return winjs.Promise.as(this.instantiationService.createInstance(giteditorinputs.NativeGitIndexStringEditorInput, fileSegment, description, mimetypes.join(', '), status, path, treeish));
+			return winjs.TPromise.as(this.instantiationService.createInstance(giteditorinputs.NativeGitIndexStringEditorInput, fileSegment, description, mimetypes.join(', '), status, path, treeish));
 		});
 	}
 
@@ -704,7 +721,7 @@ export class GitService extends ee.EventEmitter
 		return this.inputCache.getInput(status).then(null, (err) => {
 			if (err.gitErrorCode = git.GitErrorCodes.CantOpenResource) {
 				this.messageService.show(severity.Warning, nls.localize('cantOpenResource', "Can't open this git resource."));
-				return winjs.Promise.as(null);
+				return winjs.TPromise.as(null);
 			}
 
 			return winjs.Promise.wrapError(err);
@@ -755,6 +772,8 @@ export class GitService extends ee.EventEmitter
 	}
 
 	public dispose(): void {
+		this.emit(git.ServiceEvents.DISPOSE);
+
 		if (this.model) {
 			this.model.dispose();
 			this.model = null;

@@ -40,7 +40,7 @@ function loadSingleTest(test) {
 	return function (cb) {
 		define([moduleId], function () {
 			cb(null);
-		});
+		}, cb);
 	};
 }
 
@@ -50,10 +50,10 @@ function loadClientTests(cb) {
 			return file.replace(/\.js$/, '');
 		});
 
-		// load all modules
+		// load all modules with the AMD loader
 		define(modules, function () {
 			cb(null);
-		});
+		}, cb);
 	});
 }
 
@@ -61,13 +61,12 @@ function loadPluginTests(cb) {
 	var root = path.join(path.dirname(__dirname), 'extensions');
 	glob(TEST_GLOB, { cwd: root }, function (err, files) {
 
+		// load modules with commonjs
 		var modules = files.map(function (file) {
-			return 'extensions/' + file.replace(/\.js$/, '');
+			return '../extensions/' + file.replace(/\.js$/, '');
 		});
-
-		define(modules, function() {
-			cb();
-		});
+		modules.forEach(require);
+		cb(null);
 	});
 }
 
@@ -77,8 +76,8 @@ function main() {
 	});
 
 	var loaderConfig = {
-	    nodeRequire: require,
-	    nodeMain: __filename,
+		nodeRequire: require,
+		nodeMain: __filename,
 		baseUrl: path.join(path.dirname(__dirname)),
 		paths: {
 			'vs': out + '/vs',
@@ -145,7 +144,12 @@ function main() {
 		loadTasks.push(loadPluginTests);
 	}
 
-	async.parallel(loadTasks, function () {
+	async.parallel(loadTasks, function (err) {
+		if (err) {
+			console.error(err);
+			return process.exit(1);
+		}
+
 		process.stderr.write = write;
 
 		if (!argv.run) {
@@ -157,8 +161,34 @@ function main() {
 			});
 		}
 
-		// fire up mocha
-		run();
+		// report failing test for every unexpected error during any of the tests
+		var unexpectedErrors = [];
+		suite('Errors', function () {
+			test('should not have unexpected errors in tests', function () {
+				if (unexpectedErrors.length) {
+					unexpectedErrors.forEach(function (stack) {
+						console.error('');
+						console.error(stack);
+					});
+
+					assert.ok(false);
+				}
+			});
+		});
+
+		// replace the default unexpected error handler to be useful during tests
+		loader(['vs/base/common/errors'], function(errors) {
+			errors.setUnexpectedErrorHandler(function (err) {
+				try {
+					throw new Error('oops');
+				} catch (e) {
+					unexpectedErrors.push((err && err.message ? err.message : err) + '\n' + e.stack);
+				}
+			});
+
+			// fire up mocha
+			run();
+		});
 	});
 }
 

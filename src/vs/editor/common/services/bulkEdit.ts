@@ -12,7 +12,7 @@ import {TPromise} from 'vs/base/common/winjs.base';
 import {IEventService} from 'vs/platform/event/common/event';
 import {IEditorService} from 'vs/platform/editor/common/editor';
 import {IRange, ISelection, IEditorSelection, IModel, IIdentifiedSingleEditOperation} from 'vs/editor/common/editorCommon';
-import {ICodeEditor} from 'vs/editor/browser/editorBrowser';
+import {ICommonCodeEditor} from 'vs/editor/common/editorCommon';
 import {Range} from 'vs/editor/common/core/range';
 import {Selection} from 'vs/editor/common/core/selection';
 import {IFileChange, EventType as FileEventType, FileChangesEvent} from 'vs/platform/files/common/files';
@@ -212,7 +212,7 @@ class BulkEditModel {
 				var textEditorModel = <IModel>model.textEditorModel,
 					task: EditTask;
 
-				if (textEditorModel.getAssociatedResource().equals(this._sourceModel)) {
+				if (this._sourceModel && textEditorModel.getAssociatedResource().toString() ===  this._sourceModel.toString()) {
 					this._sourceModelTask = new SourceModelEditTask(textEditorModel, this._sourceSelections);
 					task = this._sourceModelTask;
 				} else {
@@ -243,13 +243,13 @@ export interface BulkEdit {
 	finish(): TPromise<ISelection>;
 }
 
-export function bulkEdit(eventService:IEventService, editorService:IEditorService, editor:ICodeEditor, edits:IResourceEdit[]):TPromise<any> {
+export function bulkEdit(eventService:IEventService, editorService:IEditorService, editor:ICommonCodeEditor, edits:IResourceEdit[]):TPromise<any> {
 	let bulk = createBulkEdit(eventService, editorService, editor);
 	bulk.add(edits);
 	return bulk.finish();
 }
 
-export function createBulkEdit(eventService: IEventService, editorService: IEditorService, editor: ICodeEditor): BulkEdit {
+export function createBulkEdit(eventService: IEventService, editorService: IEditorService, editor: ICommonCodeEditor): BulkEdit {
 
 	let all: IResourceEdit[] = [];
 	let recording = new ChangeRecorder(eventService).start();
@@ -287,7 +287,7 @@ export function createBulkEdit(eventService: IEventService, editorService: IEdit
 		let uri: URI;
 		let selections: IEditorSelection[];
 
-		if (editor) {
+		if (editor && editor.getModel()) {
 			uri = editor.getModel().getAssociatedResource();
 			selections = editor.getSelections();
 		}
@@ -309,5 +309,5 @@ export function createBulkEdit(eventService: IEventService, editorService: IEdit
 	return {
 		add,
 		finish
-	}
+	};
 }

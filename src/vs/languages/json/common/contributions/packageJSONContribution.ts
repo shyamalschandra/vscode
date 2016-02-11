@@ -5,30 +5,38 @@
 'use strict';
 
 import HtmlContent = require('vs/base/common/htmlContent');
+import Strings = require('vs/base/common/strings');
 import WinJS = require('vs/base/common/winjs.base');
 import nls = require('vs/nls');
 import JSONWorker = require('vs/languages/json/common/jsonWorker');
 import {IRequestService} from 'vs/platform/request/common/request';
+import URI from 'vs/base/common/uri';
+import {JSONLocation} from 'vs/languages/json/common/parser/jsonLocation';
 
 var LIMIT = 40;
 
 export class PackageJSONContribution implements JSONWorker.IJSONWorkerContribution {
 
 	private mostDependedOn = [ 'lodash', 'async', 'underscore', 'request', 'commander', 'express', 'debug', 'chalk', 'colors', 'q', 'coffee-script',
-	  'mkdirp', 'optimist', 'through2', 'yeoman-generator', 'moment', 'bluebird', 'glob', 'gulp-util', 'minimist', 'cheerio', 'jade', 'redis', 'node-uuid',
-	  'socket', 'io', 'uglify-js', 'winston', 'through', 'fs-extra', 'handlebars', 'body-parser', 'rimraf', 'mime', 'semver', 'mongodb', 'jquery',
-	  'grunt', 'connect', 'yosay', 'underscore', 'string', 'xml2js', 'ejs', 'mongoose', 'marked', 'extend', 'mocha', 'superagent', 'js-yaml', 'xtend',
-	  'shelljs', 'gulp', 'yargs', 'browserify', 'minimatch', 'react', 'less', 'prompt', 'inquirer', 'ws', 'event-stream', 'inherits', 'mysql', 'esprima',
-	  'jsdom', 'stylus', 'when', 'readable-stream', 'aws-sdk', 'concat-stream', 'chai', 'promise', 'wrench'];
+		'mkdirp', 'optimist', 'through2', 'yeoman-generator', 'moment', 'bluebird', 'glob', 'gulp-util', 'minimist', 'cheerio', 'jade', 'redis', 'node-uuid',
+		'socket', 'io', 'uglify-js', 'winston', 'through', 'fs-extra', 'handlebars', 'body-parser', 'rimraf', 'mime', 'semver', 'mongodb', 'jquery',
+		'grunt', 'connect', 'yosay', 'underscore', 'string', 'xml2js', 'ejs', 'mongoose', 'marked', 'extend', 'mocha', 'superagent', 'js-yaml', 'xtend',
+		'shelljs', 'gulp', 'yargs', 'browserify', 'minimatch', 'react', 'less', 'prompt', 'inquirer', 'ws', 'event-stream', 'inherits', 'mysql', 'esprima',
+		'jsdom', 'stylus', 'when', 'readable-stream', 'aws-sdk', 'concat-stream', 'chai', 'promise', 'wrench'];
 
 	private requestService : IRequestService;
+
+	private isPackageJSONFile(resource: URI): boolean {
+		var path = resource.path;
+		return Strings.endsWith(path, '/package.json');
+	}
 
 	public constructor(@IRequestService requestService: IRequestService) {
 		this.requestService = requestService;
 	}
 
-	public collectDefaultSuggestions(contributionId: string, result: JSONWorker.ISuggestionsCollector): WinJS.Promise {
-		if (contributionId === 'http://json.schemastore.org/package') {
+	public collectDefaultSuggestions(resource: URI, result: JSONWorker.ISuggestionsCollector): WinJS.Promise {
+		if (this.isPackageJSONFile(resource)) {
 			var defaultValue = {
 				'name': '{{name}}',
 				'description': '{{description}}',
@@ -39,13 +47,13 @@ export class PackageJSONContribution implements JSONWorker.IJSONWorkerContributi
 			};
 			result.add({ type: 'module', label: nls.localize('json.package.default', 'Default package.json'), codeSnippet: JSON.stringify(defaultValue, null, '\t'), documentationLabel: '' });
 		}
-		return WinJS.Promise.as(0);
+		return null;
 	}
 
-	public collectPropertySuggestions(contributionId: string, currentWord: string, addValue: boolean, isLast:boolean, result: JSONWorker.ISuggestionsCollector) : WinJS.Promise {
-		if (contributionId === 'npm-packages') {
+	public collectPropertySuggestions(resource: URI, location: JSONLocation, currentWord: string, addValue: boolean, isLast:boolean, result: JSONWorker.ISuggestionsCollector) : WinJS.Promise {
+		if (this.isPackageJSONFile(resource) && (location.matches(['dependencies']) || location.matches(['devDependencies']) || location.matches(['optionalDependencies']) || location.matches(['peerDependencies']))) {
 			var queryUrl : string;
- 			if (currentWord.length > 0) {
+			if (currentWord.length > 0) {
 				queryUrl = 'https://skimdb.npmjs.com/registry/_design/app/_view/browseAll?group_level=1&limit=' + LIMIT + '&start_key=%5B%22' + encodeURIComponent(currentWord) + '%22%5D&end_key=%5B%22'+ encodeURIComponent(currentWord + 'z') + '%22,%7B%7D%5D';
 
 				return this.requestService.makeRequest({
@@ -95,15 +103,15 @@ export class PackageJSONContribution implements JSONWorker.IJSONWorkerContributi
 						}
 					}
 					result.add({ type: 'property', label: name, codeSnippet: codeSnippet, documentationLabel: '' });
-				 });
-				 result.setAsIncomplete();
-			 }
+				});
+				result.setAsIncomplete();
+			}
 		}
-		return WinJS.Promise.as(0);
+		return null;
 	}
 
-	public collectValueSuggestions(contributionId: string, currentKey: string, result: JSONWorker.ISuggestionsCollector): WinJS.Promise {
-		if (contributionId === 'npm-packages') {
+	public collectValueSuggestions(resource: URI, location: JSONLocation, currentKey: string, result: JSONWorker.ISuggestionsCollector): WinJS.Promise {
+		if (this.isPackageJSONFile(resource) && (location.matches(['dependencies']) || location.matches(['devDependencies']) || location.matches(['optionalDependencies']) || location.matches(['peerDependencies']))) {
 			var queryUrl = 'http://registry.npmjs.org/' + encodeURIComponent(currentKey) + '/latest';
 
 			return this.requestService.makeRequest({
@@ -128,11 +136,13 @@ export class PackageJSONContribution implements JSONWorker.IJSONWorkerContributi
 				return 0;
 			});
 		}
-		return WinJS.Promise.as(0);
+		return null;
 	}
 
-	public getInfoContribution(contributionId: string, pack: string): WinJS.TPromise<HtmlContent.IHTMLContentElement[]> {
-		if (contributionId === 'npm-package') {
+	public getInfoContribution(resource: URI, location: JSONLocation): WinJS.TPromise<HtmlContent.IHTMLContentElement[]> {
+		if (this.isPackageJSONFile(resource) && (location.matches(['dependencies', '*']) || location.matches(['devDependencies', '*']) || location.matches(['optionalDependencies', '*']) || location.matches(['peerDependencies', '*']))) {
+			var pack = location.getSegments()[location.getSegments().length - 1];
+
 			var htmlContent : HtmlContent.IHTMLContentElement[] = [];
 			htmlContent.push({className: 'type', text: nls.localize('json.npm.package.hover', '{0}', pack) });
 

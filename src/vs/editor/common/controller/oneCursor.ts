@@ -11,10 +11,11 @@ import {ShiftCommand} from 'vs/editor/common/commands/shiftCommand';
 import {ReplaceCommand, ReplaceCommandWithOffsetCursorState, ReplaceCommandWithoutChangingPosition} from 'vs/editor/common/commands/replaceCommand';
 import {SurroundSelectionCommand} from 'vs/editor/common/commands/surroundSelectionCommand';
 import {Selection} from 'vs/editor/common/core/selection';
-import {IEnterAction,IndentAction,IElectricAction} from 'vs/editor/common/modes';
+import {IndentAction,IElectricAction} from 'vs/editor/common/modes';
 import {CursorMoveHelper, ICursorMoveHelperModel, IMoveResult} from 'vs/editor/common/controller/cursorMoveHelper';
 import EditorCommon = require('vs/editor/common/editorCommon');
 import Errors = require('vs/base/common/errors');
+import {getEnterActionAtPosition} from 'vs/editor/common/modes/supports/onEnter';
 
 export interface IPostOperationRunnable {
 	(ctx: IOneCursorOperationContext): void;
@@ -29,6 +30,7 @@ export interface IOneCursorOperationContext {
 	shouldPushStackElementAfter: boolean;
 	executeCommand: EditorCommon.ICommand;
 	postOperationRunnable: IPostOperationRunnable;
+	requestScrollDeltaLines: number;
 }
 
 export interface IModeConfiguration {
@@ -159,7 +161,7 @@ export class OneCursor {
 			viewPosition: this.viewPosition,
 			leftoverVisibleColumns: this.leftoverVisibleColumns,
 			selectionStartLeftoverVisibleColumns: this.selectionStartLeftoverVisibleColumns
-		}
+		};
 	}
 
 	public restoreState(state:IOneCursorState): void {
@@ -491,23 +493,25 @@ export class OneCursorOp {
 
 	// -------------------- START handlers that simply change cursor state
 	public static jumpToBracket(cursor:OneCursor, ctx: IOneCursorOperationContext): boolean {
-		var bracketDecorations = cursor.getBracketsDecorations();
-		var len = bracketDecorations.length;
+		let bracketDecorations = cursor.getBracketsDecorations();
 
-		if (len !== 2) {
+		if (bracketDecorations.length !== 2) {
 			return false;
 		}
 
-		var position = cursor.getPosition();
+		let firstBracket = cursor.model.getDecorationRange(bracketDecorations[0]);
+		let secondBracket = cursor.model.getDecorationRange(bracketDecorations[1]);
 
-		for (var i = 0; i < 2; i++) {
-			var range = cursor.model.getDecorationRange(bracketDecorations[i]);
-			var otherRange = cursor.model.getDecorationRange(bracketDecorations[1 - i]);
+		let position = cursor.getPosition();
 
-			if (Utils.isPositionAtRangeEdges(position, range) || Utils.isPositionInsideRange(position, range)) {
-				cursor.moveModelPosition(false, otherRange.startLineNumber, otherRange.startColumn, 0, false);
-				return true;
-			}
+		if (Utils.isPositionAtRangeEdges(position, firstBracket) || Utils.isPositionInsideRange(position, firstBracket)) {
+			cursor.moveModelPosition(false, secondBracket.endLineNumber, secondBracket.endColumn, 0, false);
+			return true;
+		}
+
+		if (Utils.isPositionAtRangeEdges(position, secondBracket) || Utils.isPositionInsideRange(position, secondBracket)) {
+			cursor.moveModelPosition(false, firstBracket.endLineNumber, firstBracket.endColumn, 0, false);
+			return true;
 		}
 
 		return false;
@@ -594,7 +598,7 @@ export class OneCursorOp {
 			viewLineNumber = viewSelectionEnd.lineNumber;
 			viewColumn = viewSelectionEnd.column;
 		} else {
-			var validatedViewPosition = cursor.getValidViewPosition();;
+			var validatedViewPosition = cursor.getValidViewPosition();
 			var r = cursor.getRightOfViewPosition(validatedViewPosition.lineNumber, validatedViewPosition.column);
 			viewLineNumber = r.lineNumber;
 			viewColumn = r.column;
@@ -645,7 +649,7 @@ export class OneCursorOp {
 			viewLineNumber = viewSelectionEnd.lineNumber;
 			viewColumn = viewSelectionEnd.column;
 		} else {
-			var validatedViewPosition = cursor.getValidViewPosition();;
+			var validatedViewPosition = cursor.getValidViewPosition();
 			viewLineNumber = validatedViewPosition.lineNumber;
 			viewColumn = validatedViewPosition.column;
 		}
@@ -734,6 +738,31 @@ export class OneCursorOp {
 		viewColumn = cursor.getColumnAtEndOfViewLine(viewLineNumber, viewColumn);
 		ctx.cursorPositionChangeReason = 'explicit';
 		cursor.moveViewPosition(inSelectionMode, viewLineNumber, viewColumn, 0, true);
+		return true;
+	}
+
+	public static expandLineSelection(cursor:OneCursor, ctx: IOneCursorOperationContext): boolean {
+		ctx.cursorPositionChangeReason = 'explicit';
+		let viewSel = cursor.getViewSelection();
+
+		let viewStartLineNumber = viewSel.startLineNumber;
+		let viewStartColumn = viewSel.startColumn;
+		let viewEndLineNumber = viewSel.endLineNumber;
+		let viewEndColumn = viewSel.endColumn;
+
+		let viewEndMaxColumn = cursor.getViewLineMaxColumn(viewEndLineNumber);
+		if (viewStartColumn !== 1 || viewEndColumn !== viewEndMaxColumn) {
+			viewStartColumn = 1;
+			viewEndColumn = viewEndMaxColumn;
+		} else {
+			// Expand selection with one more line down
+			let moveResult = cursor.getViewPositionDown(viewEndLineNumber, viewEndColumn, 0, 1);
+			viewEndLineNumber = moveResult.lineNumber;
+			viewEndColumn = cursor.getViewLineMaxColumn(viewEndLineNumber);
+		}
+
+		cursor.moveViewPosition(false, viewStartLineNumber, viewStartColumn, 0, true);
+		cursor.moveViewPosition(true, viewEndLineNumber, viewEndColumn, 0, true);
 		return true;
 	}
 
@@ -925,64 +954,6 @@ export class OneCursorOp {
 		return this._enter(cursor, true, ctx);
 	}
 
-	private static _getEnterActionAtPosition(model:EditorCommon.IModel, lineNumber:number, column:number): { enterAction: IEnterAction; indentation: string; } {
-		var lineText = model.getLineContent(lineNumber);
-		var lineContext = model.getLineContext(lineNumber);
-		var enterAction:IEnterAction;
-
-		if (model.getMode().onEnterSupport) {
-			try {
-				enterAction = model.getMode().onEnterSupport.onEnter(model, new Position(lineNumber, column));
-			} catch (e) {
-				Errors.onUnexpectedError(e);
-			}
-		}
-
-		if (!enterAction) {
-			if (model.getMode().electricCharacterSupport) {
-				try {
-					enterAction = model.getMode().electricCharacterSupport.onEnter(lineContext, column - 1);
-				} catch(e) {
-					Errors.onUnexpectedError(e);
-				}
-			}
-		} else {
-			// console.log('USING NEW INDENTATION LOGIC!');
-		}
-
-		var indentation = Strings.getLeadingWhitespace(lineText);
-		if (indentation.length > column - 1) {
-			indentation = indentation.substring(0, column - 1);
-		}
-
-		if (!enterAction) {
-			enterAction = {
-				indentAction: IndentAction.None,
-				appendText: '',
-			};
-		} else {
-			if(!enterAction.appendText) {
-				if (
-					(enterAction.indentAction === IndentAction.Indent) ||
-					(enterAction.indentAction === IndentAction.IndentOutdent)
-				) {
-					enterAction.appendText = '\t';
-				} else {
-					enterAction.appendText = '';
-				}
-			}
-		}
-
-		if (enterAction.removeText) {
-			indentation = indentation.substring(0, indentation.length - 1);
-		}
-
-		return {
-			enterAction: enterAction,
-			indentation: indentation
-		};
-	}
-
 	private static _enter(cursor:OneCursor, keepPosition: boolean, ctx: IOneCursorOperationContext, position?: EditorCommon.IEditorPosition, range?: EditorCommon.IEditorRange): boolean {
 		if (typeof position === 'undefined') {
 			position = cursor.getPosition();
@@ -992,7 +963,7 @@ export class OneCursorOp {
 		}
 		ctx.shouldPushStackElementBefore = true;
 
-		var r = this._getEnterActionAtPosition(cursor.model, position.lineNumber, position.column);
+		var r = getEnterActionAtPosition(cursor.model, position.lineNumber, position.column);
 		var enterAction = r.enterAction;
 		var indentation = r.indentation;
 
@@ -1255,14 +1226,11 @@ export class OneCursorOp {
 		return this.actualType(cursor, ch, false, ctx);
 	}
 
-	public static replacePreviousChar(cursor:OneCursor, txt: string, ctx: IOneCursorOperationContext): boolean {
-		var pos = cursor.getPosition();
-		var range: EditorCommon.IEditorRange;
-		if (pos.column > 1) {
-			range = new Range(pos.lineNumber, pos.column - 1, pos.lineNumber, pos.column);
-		} else {
-			range = new Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column);
-		}
+	public static replacePreviousChar(cursor:OneCursor, txt: string, replaceCharCnt:number, ctx: IOneCursorOperationContext): boolean {
+		let pos = cursor.getPosition();
+		let range: EditorCommon.IEditorRange;
+		let startColumn = Math.max(1, pos.column - replaceCharCnt);
+		range = new Range(pos.lineNumber, startColumn, pos.lineNumber, pos.column);
 		ctx.executeCommand = new ReplaceCommand(range, txt);
 		return true;
 	}
@@ -1283,7 +1251,7 @@ export class OneCursorOp {
 			return '\t';
 		}
 
-		var r = this._getEnterActionAtPosition(cursor.model, lastLineNumber, cursor.model.getLineMaxColumn(lastLineNumber));
+		var r = getEnterActionAtPosition(cursor.model, lastLineNumber, cursor.model.getLineMaxColumn(lastLineNumber));
 
 		var indentation: string;
 		if (r.enterAction.indentAction === IndentAction.Outdent) {
@@ -1389,6 +1357,10 @@ export class OneCursorOp {
 		// Returns true if delete was handled.
 
 		if (!cursor.configuration.editor.autoClosingBrackets) {
+			return false;
+		}
+
+		if (!cursor.getSelection().isEmpty()) {
 			return false;
 		}
 

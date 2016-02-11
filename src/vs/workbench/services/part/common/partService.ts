@@ -5,11 +5,12 @@
 'use strict';
 
 import {TPromise} from 'vs/base/common/winjs.base';
-import {createDecorator, ServiceIdentifier} from 'vs/platform/instantiation/common/instantiation'
+import {createDecorator, ServiceIdentifier} from 'vs/platform/instantiation/common/instantiation';
 
 export enum Parts {
 	ACTIVITYBAR_PART,
 	SIDEBAR_PART,
+	PANEL_PART,
 	EDITOR_PART,
 	STATUSBAR_PART
 }
@@ -40,7 +41,7 @@ export interface IPartService {
 	joinCreation(): TPromise<boolean>;
 
 	/**
-	 * Returns wether the given part has the keyboard focus or not.
+	 * Returns whether the given part has the keyboard focus or not.
 	 */
 	hasFocus(part: Parts): boolean;
 
@@ -58,6 +59,16 @@ export interface IPartService {
 	 * Set sidebar hidden or not
 	 */
 	setSideBarHidden(hidden: boolean): void;
+
+	/**
+	 * Checks if the panel part is currently hidden or not
+	 */
+	isPanelHidden(): boolean;
+
+	/**
+	 * Set panel part hidden or not
+	 */
+	setPanelHidden(hidden: boolean): void;
 
 	/**
 	 * Gets the current side bar position. Note that the sidebar can be hidden too.

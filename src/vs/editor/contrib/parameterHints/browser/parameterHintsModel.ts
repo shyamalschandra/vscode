@@ -6,34 +6,51 @@
 
 import {TPromise} from 'vs/base/common/winjs.base';
 import lifecycle = require('vs/base/common/lifecycle');
-import hash = require('vs/base/common/bits/hash');
 import async = require('vs/base/common/async');
 import events = require('vs/base/common/eventEmitter');
 import EditorCommon = require('vs/editor/common/editorCommon');
 import Modes = require('vs/editor/common/modes');
-import {ParameterHintsRegistry} from '../common/parameterHints';
-import {sequence} from 'vs/base/common/async';
+import {ParameterHintsRegistry, getParameterHints} from '../common/parameterHints';
 
-function hashParameterHints(hints: Modes.IParameterHints): string {
-	if (!hints) {
-		return null;
+function equalsArr<T>(a: T[], b:T[], equalsFn:(a:T,b:T)=>boolean): boolean {
+	if (a.length !== b.length) {
+		return false;
 	}
+	for (let i = 0, len = a.length; i < len; i++) {
+		if (!equalsFn(a[i], b[i])) {
+			return false;
+		}
+	}
+	return true;
+}
 
-	var result = new hash.SHA1();
+function equalsParameter(a: Modes.IParameter, b: Modes.IParameter): boolean {
+	return (
+		a.documentation === b.documentation
+		&& a.label === b.label
+		&& a.signatureLabelEnd === b.signatureLabelEnd
+		&& a.signatureLabelOffset === b.signatureLabelOffset
+	);
+}
 
-	hints.signatures.forEach(s => {
-		result.update(s.documentation || '');
-		result.update(s.label || '');
+function equalsSignature(a: Modes.ISignature, b: Modes.ISignature): boolean {
+	return (
+		a.documentation === b.documentation
+		&& a.label === b.label
+		&& equalsArr(a.parameters, b.parameters, equalsParameter)
+	);
+}
 
-		s.parameters.forEach(p => {
-			result.update(p.documentation || '');
-			result.update(p.label || '');
-			result.update(p.signatureLabelEnd.toString());
-			result.update(p.signatureLabelOffset.toString());
-		});
-	});
-
-	return result.digest();
+function equalsParameterHints(a: Modes.IParameterHints, b: Modes.IParameterHints): boolean {
+	if (!a && !b) {
+		return true;
+	}
+	if (!a || !b) {
+		return false;
+	}
+	return (
+		equalsArr(a.signatures, b.signatures, equalsSignature)
+	);
 }
 
 export interface IHintEvent {
@@ -49,8 +66,8 @@ export class ParameterHintsModel extends events.EventEmitter {
 	private triggerCharactersListeners: lifecycle.IDisposable[];
 
 	private active: boolean;
-	private hash: string;
-	private throttledDelayer: async.ThrottledDelayer;
+	private prevResult: Modes.IParameterHints;
+	private throttledDelayer: async.ThrottledDelayer<boolean>;
 
 	constructor(editor:EditorCommon.ICommonCodeEditor) {
 		super(['cancel', 'hint', 'destroy']);
@@ -59,10 +76,10 @@ export class ParameterHintsModel extends events.EventEmitter {
 		this.toDispose = [];
 		this.triggerCharactersListeners = [];
 
-		this.throttledDelayer = new async.ThrottledDelayer(ParameterHintsModel.DELAY);
+		this.throttledDelayer = new async.ThrottledDelayer<boolean>(ParameterHintsModel.DELAY);
 
 		this.active = false;
-		this.hash = null;
+		this.prevResult = null;
 
 		this.event(this.editor, EditorCommon.EventType.ModelChanged, e => this.onModelChanged());
 		this.event(this.editor, EditorCommon.EventType.ModelModeChanged, encodeURI => this.onModelChanged());
@@ -76,7 +93,7 @@ export class ParameterHintsModel extends events.EventEmitter {
 		this.active = false;
 
 		if (!refresh) {
-			this.hash = null;
+			this.prevResult = null;
 		}
 
 		this.throttledDelayer.cancel();
@@ -96,23 +113,18 @@ export class ParameterHintsModel extends events.EventEmitter {
 	}
 
 	public doTrigger(triggerCharacter: string): TPromise<boolean> {
-		let model = this.editor.getModel();
-		let support = ParameterHintsRegistry.ordered(model)[0];
-		if (!support) {
-			return TPromise.as(false);
-		}
+		return getParameterHints(this.editor.getModel(), this.editor.getPosition(), triggerCharacter).then(result => {
 
-		return support.getParameterHints(model.getAssociatedResource(), this.editor.getPosition(), triggerCharacter).then((result: Modes.IParameterHints) => {
-			var hash = hashParameterHints(result);
+			let equalsPrevResult = equalsParameterHints(this.prevResult, result);
 
-			if (!result || result.signatures.length === 0 || (this.hash && hash !== this.hash)) {
+			if (!result || result.signatures.length === 0 || (this.prevResult && !equalsPrevResult)) {
 				this.cancel();
 				this.emit('cancel');
 				return false;
 			}
 
 			this.active = true;
-			this.hash = hash;
+			this.prevResult = result;
 
 			var event:IHintEvent = { hints: result };
 			this.emit('hint', event);

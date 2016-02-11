@@ -4,28 +4,24 @@
  *--------------------------------------------------------------------------------------------*/
 'use strict';
 
-import {TPromise, Promise, PPromise} from 'vs/base/common/winjs.base';
+import {TPromise} from 'vs/base/common/winjs.base';
 import nls = require('vs/nls');
-import {ThrottledDelayer} from 'vs/base/common/async';
 import paths = require('vs/base/common/paths');
 import labels = require('vs/base/common/labels');
-import strings = require('vs/base/common/strings');
 import URI from 'vs/base/common/uri';
 import {IRange} from 'vs/editor/common/editorCommon';
-import {IAutoFocus} from 'vs/base/parts/quickopen/browser/quickOpen';
-import {QuickOpenEntry, QuickOpenModel, IHighlight} from 'vs/base/parts/quickopen/browser/quickOpenModel';
-import filters = require('vs/base/common/filters');
-import comparers = require('vs/base/common/comparers');
+import {IAutoFocus} from 'vs/base/parts/quickopen/common/quickOpen';
+import {QuickOpenEntry, QuickOpenModel} from 'vs/base/parts/quickopen/browser/quickOpenModel';
 import {QuickOpenHandler, EditorQuickOpenEntry} from 'vs/workbench/browser/quickopen';
-import {FileMatch, SearchResult} from 'vs/workbench/parts/search/common/searchModel';
 import {QueryBuilder} from 'vs/workbench/parts/search/common/searchQuery';
 import {ITextFileService} from 'vs/workbench/parts/files/common/files';
 import {EditorInput} from 'vs/workbench/common/editor';
-import {IWorkbenchEditorService, IFileInput} from 'vs/workbench/services/editor/common/editorService';
+import {IResourceInput} from 'vs/platform/editor/common/editor';
+import {IWorkbenchEditorService} from 'vs/workbench/services/editor/common/editorService';
 import {IConfigurationService} from 'vs/platform/configuration/common/configuration';
 import {IInstantiationService} from 'vs/platform/instantiation/common/instantiation';
 import {IMessageService} from 'vs/platform/message/common/message';
-import {IQueryOptions, ISearchService, ISearchComplete, ISearchProgressItem} from 'vs/platform/search/common/search';
+import {IQueryOptions, ISearchService} from 'vs/platform/search/common/search';
 import {IWorkspaceContextService} from 'vs/platform/workspace/common/workspace';
 
 export class FileEntry extends EditorQuickOpenEntry {
@@ -34,7 +30,10 @@ export class FileEntry extends EditorQuickOpenEntry {
 	private resource: URI;
 	private range: IRange;
 
-	constructor(name: string, resource: URI, highlights: IHighlight[],
+	constructor(
+		name: string,
+		description: string,
+		resource: URI,
 		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IInstantiationService private instantiationService: IInstantiationService,
 		@IWorkspaceContextService contextService: IWorkspaceContextService
@@ -43,12 +42,15 @@ export class FileEntry extends EditorQuickOpenEntry {
 
 		this.resource = resource;
 		this.name = name;
-		this.description = labels.getPathLabel(paths.dirname(this.resource.fsPath), contextService);
-		this.setHighlights(highlights);
+		this.description = description;
 	}
 
 	public getLabel(): string {
 		return this.name;
+	}
+
+	public getAriaLabel(): string {
+		return nls.localize('entryAriaLabel', "{0}, file picker", this.getLabel());
 	}
 
 	public getDescription(): string {
@@ -67,8 +69,8 @@ export class FileEntry extends EditorQuickOpenEntry {
 		this.range = range;
 	}
 
-	public getInput(): IFileInput | EditorInput {
-		let input: IFileInput = {
+	public getInput(): IResourceInput | EditorInput {
+		let input: IResourceInput = {
 			resource: this.resource,
 		};
 
@@ -83,13 +85,7 @@ export class FileEntry extends EditorQuickOpenEntry {
 }
 
 export class OpenFileHandler extends QuickOpenHandler {
-
-	private static SEARCH_DELAY = 500; // This delay acommodates for the user typing a word and then stops typing to start searching
-
 	private queryBuilder: QueryBuilder;
-	private delayer: ThrottledDelayer;
-	private isStandalone: boolean;
-	private pendingSearch: PPromise<ISearchComplete, ISearchProgressItem>
 
 	constructor(
 		@IWorkbenchEditorService private editorService: IWorkbenchEditorService,
@@ -103,13 +99,6 @@ export class OpenFileHandler extends QuickOpenHandler {
 		super();
 
 		this.queryBuilder = this.instantiationService.createInstance(QueryBuilder);
-		this.delayer = new ThrottledDelayer(OpenFileHandler.SEARCH_DELAY);
-		this.isStandalone = true;
-	}
-
-	public setStandalone(standalone: boolean) {
-		this.delayer = standalone ? new ThrottledDelayer(OpenFileHandler.SEARCH_DELAY) : null;
-		this.isStandalone = standalone;
 	}
 
 	public getResults(searchValue: string): TPromise<QuickOpenModel> {
@@ -119,8 +108,6 @@ export class OpenFileHandler extends QuickOpenHandler {
 		// Respond directly to empty search
 		if (!searchValue) {
 			promise = TPromise.as([]);
-		} else if (this.delayer) {
-			promise = this.delayer.trigger(() => this.doFindResults(searchValue)); // Run search with delay as needed
 		} else {
 			promise = this.doFindResults(searchValue);
 		}
@@ -129,67 +116,25 @@ export class OpenFileHandler extends QuickOpenHandler {
 	}
 
 	private doFindResults(searchValue: string): TPromise<QuickOpenEntry[]> {
+		const query: IQueryOptions = {
+			folderResources: this.contextService.getWorkspace() ? [this.contextService.getWorkspace().resource] : [],
+			extraFileResources: this.textFileService.getWorkingFilesModel().getOutOfWorkspaceContextEntries().map(e => e.resource),
+			filePattern: searchValue
+		};
 
-		// clear previous searches if still running
-		this.cancelPendingSearch();
-
-		let rootResources = this.textFileService.getWorkingFilesModel().getOutOfWorkspaceContextEntries().map((e) => e.resource);
-		if (this.contextService.getWorkspace()) {
-			rootResources.push(this.contextService.getWorkspace().resource);
-		}
-
-		let query: IQueryOptions = { filePatterns: [{ pattern: searchValue }], rootResources: rootResources };
-
-		return this.queryBuilder.file(query).then((query) => {
-			this.pendingSearch = this.searchService.search(query);
-
-			return this.pendingSearch;
-		}).then((complete) => {
-			this.pendingSearch = null;
-
-			let searchResult = this.instantiationService.createInstance(SearchResult, null);
-			searchResult.append(complete.results);
-
+		return this.queryBuilder.file(query).then((query) => this.searchService.search(query)).then((complete) => {
 			let results: QuickOpenEntry[] = [];
+			for (let i = 0; i < complete.results.length; i++) {
+				let fileMatch = complete.results[i];
 
-			// Sort (standalone only)
-			let matches = searchResult.matches();
-			if (this.isStandalone) {
-				matches = matches.sort((elementA, elementB) => this.sort(elementA, elementB, searchValue.toLowerCase()));
-			}
+				let label = paths.basename(fileMatch.resource.fsPath);
+				let description = labels.getPathLabel(paths.dirname(fileMatch.resource.fsPath), this.contextService);
 
-			// Highlight
-			for (let i = 0; i < matches.length; i++) {
-				let fileMatch = matches[i];
-				let highlights = filters.matchesFuzzy(searchValue, fileMatch.name());
-
-				results.push(this.instantiationService.createInstance(FileEntry, fileMatch.name(), fileMatch.resource(), highlights));
+				results.push(this.instantiationService.createInstance(FileEntry, label, description, fileMatch.resource));
 			}
 
 			return results;
 		});
-	}
-
-	private sort(elementA: FileMatch, elementB: FileMatch, searchValue: string): number {
-		let elementAName = elementA.name().toLowerCase();
-		let elementBName = elementB.name().toLowerCase();
-
-		// Sort matches that have search value in beginning to the top
-		let elementAPrefixMatch = elementAName.indexOf(searchValue) === 0;
-		let elementBPrefixMatch = elementBName.indexOf(searchValue) === 0;
-		if (elementAPrefixMatch !== elementBPrefixMatch) {
-			return elementAPrefixMatch ? -1 : 1;
-		}
-
-		// Compare by name
-
-		let r = comparers.compareFileNames(elementAName, elementBName);
-		if (r !== 0) {
-			return r;
-		}
-
-		// Otherwise do full compare with path info
-		return strings.localeCompare(elementA.resource().fsPath, elementB.resource().fsPath);
 	}
 
 	public getGroupLabel(): string {
@@ -200,16 +145,5 @@ export class OpenFileHandler extends QuickOpenHandler {
 		return {
 			autoFocusFirstEntry: true
 		};
-	}
-
-	private cancelPendingSearch(): void {
-		if (this.pendingSearch) {
-			this.pendingSearch.cancel();
-			this.pendingSearch = null;
-		}
-	}
-
-	public onClose(canceled: boolean): void {
-		this.cancelPendingSearch();
 	}
 }

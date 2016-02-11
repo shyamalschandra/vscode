@@ -5,6 +5,7 @@
 'use strict';
 
 import 'vs/css!vs/base/browser/ui/progressbar/progressbar';
+import URI from 'vs/base/common/uri';
 import nls = require('vs/nls');
 import EditorCommon = require('vs/editor/common/editorCommon');
 import Modes = require('vs/editor/common/modes');
@@ -12,12 +13,13 @@ import {TPromise} from 'vs/base/common/winjs.base';
 import EditorBrowser = require('vs/editor/browser/editorBrowser');
 import HoverOperation = require('./hoverOperation');
 import HoverWidget = require('./hoverWidgets');
-import HtmlContent = require('vs/base/common/htmlContent');
 import {renderHtml} from 'vs/base/browser/htmlContentRenderer';
-import {tokenizeToHtmlContent} from 'vs/editor/common/modes/textToHtmlTokenizer';
-import ExtraInfoRegistry from '../common/hover';
+import {tokenizeToString} from 'vs/editor/common/modes/textToHtmlTokenizer';
 import {Range} from 'vs/editor/common/core/range';
-
+import {ExtraInfoRegistry, getExtraInfoAtPosition} from '../common/hover';
+import {IEditorService} from 'vs/platform/editor/common/editor';
+import {IKeybindingService} from 'vs/platform/keybinding/common/keybindingService';
+import {KeybindingsRegistry} from 'vs/platform/keybinding/common/keybindingsRegistry';
 
 class ModesContentComputer implements HoverOperation.IHoverComputer<Modes.IComputeExtraInfoResult[]> {
 
@@ -46,27 +48,10 @@ class ModesContentComputer implements HoverOperation.IHoverComputer<Modes.ICompu
 			return TPromise.as(null);
 		}
 
-		let supports = ExtraInfoRegistry.all(model);
-		let values: Modes.IComputeExtraInfoResult[] = [];
-		let promises: TPromise<any>[] = [];
-
-		for (let support of supports) {
-			promises.push(support.computeInfo(this._editor.getModel().getAssociatedResource(), {
-				lineNumber: this._range.startLineNumber,
-				column: this._range.startColumn,
-			}).then((result: Modes.IComputeExtraInfoResult) => {
-				if (result) {
-					let hasRange = (typeof result.range !== 'undefined');
-					let hasValue = (typeof result.value !== 'undefined');
-					let hasHtmlContent = (typeof result.htmlContent !== 'undefined' && result.htmlContent && result.htmlContent.length > 0);
-					if (hasRange && (hasValue || hasHtmlContent)) {
-						values.push(result);
-					}
-				}
-			}));
-		}
-
-		return TPromise.join(promises).then(() => values);
+		return getExtraInfoAtPosition(model, {
+			lineNumber: this._range.startLineNumber,
+			column: this._range.startColumn
+		});
 	}
 
 	public computeSync(): Modes.IComputeExtraInfoResult[] {
@@ -138,13 +123,17 @@ export class ModesContentHoverWidget extends HoverWidget.ContentHoverWidget {
 	private _hoverOperation: HoverOperation.HoverOperation<Modes.IComputeExtraInfoResult[]>;
 	private _highlightDecorations:string[];
 	private _isChangingDecorations: boolean;
+	private _editorService: IEditorService;
+	private _keybindingService: IKeybindingService;
 
-	constructor(editor: EditorBrowser.ICodeEditor) {
+	constructor(editor: EditorBrowser.ICodeEditor, editorService: IEditorService, keybindingService: IKeybindingService) {
 		super(ModesContentHoverWidget.ID, editor);
 
 		this._computer = new ModesContentComputer(this._editor);
 		this._highlightDecorations = [];
 		this._isChangingDecorations = false;
+		this._editorService = editorService;
+		this._keybindingService = keybindingService;
 
 		this._hoverOperation = new HoverOperation.HoverOperation(
 			this._computer,
@@ -217,7 +206,7 @@ export class ModesContentHoverWidget extends HoverWidget.ContentHoverWidget {
 	public _withResult(result: Modes.IComputeExtraInfoResult[], complete:boolean): void {
 		this._messages = result;
 
-		if (this._messages.length > 0) {
+		if (this._lastRange && this._messages.length > 0) {
 			this._renderMessages(this._lastRange, this._messages);
 		} else if(complete) {
 			this.hide();
@@ -253,13 +242,32 @@ export class ModesContentHoverWidget extends HoverWidget.ContentHoverWidget {
 
 			if(msg.htmlContent && msg.htmlContent.length > 0) {
 				msg.htmlContent.forEach((content) => {
-					container.appendChild(renderHtml(content, undefined, (modeId, value) => {
-						let mode: Modes.IMode;
-						let model = this._editor.getModel();
-						if (!model.isDisposed()) {
-							mode = model.getMode();
+					container.appendChild(renderHtml(content, {
+						actionCallback: (content) => {
+
+							let promise: TPromise<any>;
+							if (KeybindingsRegistry.getCommands()[content]) {
+								promise = this._keybindingService.executeCommand(content);
+							} else {
+								try {
+									let resource = URI.parse(content);
+									promise = this._editorService.openEditor({resource});
+								} catch (e) {
+									// ignore
+								}
+							}
+							if (promise) {
+								promise.then(undefined, err => console.log(err));
+							}
+						},
+						codeBlockRenderer: (modeId, value) => {
+							let mode: Modes.IMode;
+							let model = this._editor.getModel();
+							if (!model.isDisposed()) {
+								mode = model.getMode();
+							}
+							return tokenizeToString(value, model.getMode());
 						}
-						return tokenizeToHtmlContent(value, model.getMode());
 					}));
 				});
 			} else {

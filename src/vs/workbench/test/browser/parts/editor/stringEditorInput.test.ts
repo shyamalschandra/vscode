@@ -6,15 +6,12 @@
 'use strict';
 
 import * as assert from 'assert';
-import {Promise } from 'vs/base/common/winjs.base';
+import {TPromise } from 'vs/base/common/winjs.base';
 import * as Strings from 'vs/base/common/strings';
 import URI from 'vs/base/common/uri';
-import {URL} from 'vs/base/common/network';
-import {StringEditorInput} from 'vs/workbench/browser/parts/editor/stringEditorInput';
-import {LogEditorInput} from 'vs/workbench/browser/parts/editor/logEditorInput';
-import {ResourceEditorInput} from 'vs/workbench/browser/parts/editor/resourceEditorInput';
-import {ReadOnlyEditorInput} from 'vs/workbench/browser/parts/editor/readOnlyEditorInput';
-import {ReadOnlyEditorModel} from 'vs/workbench/browser/parts/editor/readOnlyEditorModel';
+import {StringEditorInput} from 'vs/workbench/common/editor/stringEditorInput';
+import {ResourceEditorInput} from 'vs/workbench/common/editor/resourceEditorInput';
+import {ResourceEditorModel} from 'vs/workbench/common/editor/resourceEditorModel';
 import {TestWorkspace, TestEditorService, MockRequestService} from 'vs/workbench/test/browser/servicesTestUtils';
 import * as InstantiationService from 'vs/platform/instantiation/common/instantiationService';
 import {createMockModelService, createMockModeService} from 'vs/editor/test/common/servicesTestUtils';
@@ -95,13 +92,13 @@ suite("Workbench - StringEditorInput", () => {
 	test("Input.matches() - StringEditorInput", function() {
 		let inst = InstantiationService.create({});
 
-		let promise = Promise.as("value");
+		let promise = TPromise.as("value");
 
 		let stringEditorInput = inst.createInstance(StringEditorInput, "name", 'description', "value", "mime", false);
-		let promiseEditorInput = new ResourceEditorInput("name", "description", "url", "mime", void 0, void 0, void 0, void 0);
+		let promiseEditorInput = inst.createInstance(ResourceEditorInput, "name", "description", URI.create('inMemory', null, 'thePath'));
 
 		let stringEditorInput2 = inst.createInstance(StringEditorInput, "name", 'description', "value", "mime", false);
-		let promiseEditorInput2 = new ResourceEditorInput("name", "description", "url", "mime", void 0, void 0, void 0, void 0);
+		let promiseEditorInput2 = inst.createInstance(ResourceEditorInput, "name", "description", URI.create('inMemory', null, 'thePath'));
 
 		assert.strictEqual(stringEditorInput.matches(null), false);
 		assert.strictEqual(promiseEditorInput.matches(null), false);
@@ -113,18 +110,7 @@ suite("Workbench - StringEditorInput", () => {
 		assert.strictEqual(stringEditorInput.matches(stringEditorInput2), true);
 	});
 
-	test("LogEditorInput", function() {
-		let inst = InstantiationService.create({});
-
-		let logEditorInput = inst.createInstance(LogEditorInput, "name", 'description', "value\nvalue\nvalue", "mime", false);
-		let logEditorInput2 = inst.createInstance(LogEditorInput, "name", 'description', "value\nvalue\nvalue", "mime", false);
-		let stringEditorInput = inst.createInstance(StringEditorInput, "name", 'description', "value", "mime", false);
-
-		assert.strictEqual(logEditorInput.matches(stringEditorInput), false);
-		assert.strictEqual(logEditorInput.matches(logEditorInput2), true);
-	});
-
-	test("ReadOnlyEditorInput", function(done) {
+	test("ResourceEditorInput", function(done) {
 		let modelService = createMockModelService();
 		let modeService = createMockModeService();
 		let inst = InstantiationService.create({
@@ -133,10 +119,10 @@ suite("Workbench - StringEditorInput", () => {
 		});
 
 		let resource = URI.create('inMemory', null, 'thePath');
-		let model = modelService.createModel('function test() {}', modeService.getOrCreateMode('text'), URL.fromUri(resource));
-		let input:ReadOnlyEditorInput = inst.createInstance(ReadOnlyEditorInput, 'The Name', 'The Description', resource);
+		let model = modelService.createModel('function test() {}', modeService.getOrCreateMode('text'), resource);
+		let input:ResourceEditorInput = inst.createInstance(ResourceEditorInput, 'The Name', 'The Description', resource);
 
-		input.resolve().then((model:ReadOnlyEditorModel) => {
+		input.resolve().then((model:ResourceEditorModel) => {
 			assert.ok(model);
 			assert.equal(model.getValue(), 'function test() {}');
 

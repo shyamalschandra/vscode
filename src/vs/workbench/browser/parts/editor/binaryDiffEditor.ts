@@ -8,15 +8,16 @@
 import 'vs/css!./media/binarydiffeditor';
 import {TPromise} from 'vs/base/common/winjs.base';
 import nls = require('vs/nls');
+import URI from 'vs/base/common/uri';
 import {Sash, ISashEvent, IVerticalSashLayoutProvider} from 'vs/base/browser/ui/sash/sash';
 import {Dimension, Builder, $} from 'vs/base/browser/builder';
 import {ResourceViewer} from 'vs/base/browser/ui/resourceviewer/resourceViewer';
 import {IScrollableElement} from 'vs/base/browser/ui/scrollbar/scrollableElement';
-import {ScrollableElement} from 'vs/base/browser/ui/scrollbar/impl/scrollableElement';
+import {ScrollableElement} from 'vs/base/browser/ui/scrollbar/scrollableElementImpl';
 import {BaseEditor} from 'vs/workbench/browser/parts/editor/baseEditor';
 import {EditorInput, EditorOptions} from 'vs/workbench/common/editor';
-import {BinaryResourceEditorModel} from 'vs/workbench/browser/parts/editor/resourceEditorModel';
-import {DiffEditorModel} from 'vs/workbench/browser/parts/editor/diffEditorModel';
+import {BinaryEditorModel} from 'vs/workbench/common/editor/binaryEditorModel';
+import {DiffEditorModel} from 'vs/workbench/common/editor/diffEditorModel';
 import {IWorkbenchEditorService} from 'vs/workbench/services/editor/common/editorService';
 import {ITelemetryService} from 'vs/platform/telemetry/common/telemetry';
 
@@ -55,7 +56,7 @@ export class BinaryResourceDiffEditor extends BaseEditor implements IVerticalSas
 		let leftBinaryContainerElement = document.createElement('div');
 		leftBinaryContainerElement.className = 'binary-container';
 		this.leftBinaryContainer = $(leftBinaryContainerElement);
-		this.leftBinaryContainer.tabindex(0); // enable focus support
+		this.leftBinaryContainer.tabindex(0); // enable focus support from the editor part (do not remove)
 
 		// Left Custom Scrollbars
 		this.leftScrollbar = new ScrollableElement(leftBinaryContainerElement, { horizontal: 'hidden', vertical: 'hidden' });
@@ -72,7 +73,7 @@ export class BinaryResourceDiffEditor extends BaseEditor implements IVerticalSas
 		let rightBinaryContainerElement = document.createElement('div');
 		rightBinaryContainerElement.className = 'binary-container';
 		this.rightBinaryContainer = $(rightBinaryContainerElement);
-		this.rightBinaryContainer.tabindex(0); // enable focus support
+		this.rightBinaryContainer.tabindex(0); // enable focus support from the editor part (do not remove)
 
 		// Right Custom Scrollbars
 		this.rightScrollbar = new ScrollableElement(rightBinaryContainerElement, { horizontal: 'hidden', vertical: 'hidden' });
@@ -96,7 +97,7 @@ export class BinaryResourceDiffEditor extends BaseEditor implements IVerticalSas
 		return this.editorService.resolveEditorModel(input, true /* Reload */).then((resolvedModel: DiffEditorModel) => {
 
 			// Assert model instance
-			if (!(resolvedModel.originalModel instanceof BinaryResourceEditorModel) || !(resolvedModel.modifiedModel instanceof BinaryResourceEditorModel)) {
+			if (!(resolvedModel.originalModel instanceof BinaryEditorModel) || !(resolvedModel.modifiedModel instanceof BinaryEditorModel)) {
 				return TPromise.wrapError<void>(nls.localize('cannotDiffTextToBinary', "Comparing binary files to non binary files is currently not supported"));
 			}
 
@@ -106,16 +107,16 @@ export class BinaryResourceDiffEditor extends BaseEditor implements IVerticalSas
 			}
 
 			// Render original
-			let original = <BinaryResourceEditorModel>resolvedModel.originalModel;
-			this.renderInput(original.getName(), original.getUrl(), true);
+			let original = <BinaryEditorModel>resolvedModel.originalModel;
+			this.renderInput(original.getName(), original.getResource(), true);
 
 			// Render modified
-			let modified = <BinaryResourceEditorModel>resolvedModel.modifiedModel;
-			this.renderInput(modified.getName(), modified.getUrl(), false);
+			let modified = <BinaryEditorModel>resolvedModel.modifiedModel;
+			this.renderInput(modified.getName(), modified.getResource(), false);
 		});
 	}
 
-	private renderInput(name: string, url: string, isOriginal: boolean): void {
+	private renderInput(name: string, resource: URI, isOriginal: boolean): void {
 
 		// Reset Sash to default 50/50 ratio if needed
 		if (this.leftContainerWidth && this.dimension && this.leftContainerWidth !== this.dimension.width / 2) {
@@ -128,7 +129,7 @@ export class BinaryResourceDiffEditor extends BaseEditor implements IVerticalSas
 		let container = isOriginal ? this.leftBinaryContainer : this.rightBinaryContainer;
 		let scrollbar = isOriginal ? this.leftScrollbar : this.rightScrollbar;
 
-		ResourceViewer.show(name, url, container, scrollbar);
+		ResourceViewer.show(name, resource, container, scrollbar);
 	}
 
 	public clearInput(): void {
@@ -214,9 +215,9 @@ export class BinaryResourceDiffEditor extends BaseEditor implements IVerticalSas
 		// Sash
 		this.sash.dispose();
 
-		// Destroy Scrollbar
-		this.leftScrollbar.destroy();
-		this.rightScrollbar.destroy();
+		// Dispose Scrollbar
+		this.leftScrollbar.dispose();
+		this.rightScrollbar.dispose();
 
 		// Destroy Container
 		this.leftBinaryContainer.destroy();

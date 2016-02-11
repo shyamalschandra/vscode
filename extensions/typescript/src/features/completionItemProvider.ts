@@ -1,7 +1,8 @@
-/* --------------------------------------------------------------------------------------------
- * Copyright (c) Microsoft Corporation. All rights reserved.
- * Licensed under the MIT License. See License.txt in the project root for license information.
- * ------------------------------------------------------------------------------------------ */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 'use strict';
 
 import { CompletionItem, TextDocument, Position, CompletionItemKind, CompletionItemProvider, CancellationToken } from 'vscode';
@@ -50,6 +51,8 @@ class MyCompletionItem extends CompletionItem {
 				return CompletionItemKind.Class;
 			case PConst.Kind.interface:
 				return CompletionItemKind.Interface;
+			case PConst.Kind.warning:
+				return CompletionItemKind.File;
 		}
 
 		return CompletionItemKind.Property;

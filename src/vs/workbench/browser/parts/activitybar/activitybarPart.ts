@@ -6,7 +6,8 @@
 'use strict';
 
 import 'vs/css!./media/activityBarPart';
-import {Promise} from 'vs/base/common/winjs.base';
+import nls = require('vs/nls');
+import {TPromise} from 'vs/base/common/winjs.base';
 import {Builder, $} from 'vs/base/browser/builder';
 import {Action, IAction} from 'vs/base/common/actions';
 import errors = require('vs/base/common/errors');
@@ -15,8 +16,8 @@ import {ActionsOrientation, ActionBar, IActionItem} from 'vs/base/browser/ui/act
 import {Scope, IActionBarRegistry, Extensions as ActionBarExtensions, prepareActions} from 'vs/workbench/browser/actionBarRegistry';
 import {CONTEXT, ToolBar} from 'vs/base/browser/ui/toolbar/toolbar';
 import {Registry} from 'vs/platform/platform';
-import {ViewletEvent, EventType} from 'vs/workbench/browser/events';
-import {ViewletDescriptor, IViewletRegistry, Extensions as ViewletExtensions} from 'vs/workbench/browser/viewlet';
+import {CompositeEvent, EventType} from 'vs/workbench/common/events';
+import {ViewletDescriptor, ViewletRegistry, Extensions as ViewletExtensions} from 'vs/workbench/browser/viewlet';
 import {Part} from 'vs/workbench/browser/part';
 import {ActivityAction, ActivityActionItem} from 'vs/workbench/browser/parts/activitybar/activityAction';
 import {IViewletService} from 'vs/workbench/services/viewlet/common/viewletService';
@@ -28,7 +29,6 @@ import {IInstantiationService} from 'vs/platform/instantiation/common/instantiat
 import {IMessageService, Severity} from 'vs/platform/message/common/message';
 import {ITelemetryService} from 'vs/platform/telemetry/common/telemetry';
 import {IKeybindingService} from 'vs/platform/keybinding/common/keybindingService';
-import {KeybindingsUtils} from 'vs/platform/keybinding/common/keybindingsUtils';
 
 export class ActivitybarPart extends Part implements IActivityService {
 	public serviceId = IActivityService;
@@ -62,28 +62,28 @@ export class ActivitybarPart extends Part implements IActivityService {
 	private registerListeners(): void {
 
 		// Activate viewlet action on opening of a viewlet
-		this.toUnbind.push(this.eventService.addListener(EventType.VIEWLET_OPENING, (e: ViewletEvent) => this.onViewletOpening(e)));
+		this.toUnbind.push(this.eventService.addListener(EventType.COMPOSITE_OPENING, (e: CompositeEvent) => this.onCompositeOpening(e)));
 
 		// Deactivate viewlet action on close
-		this.toUnbind.push(this.eventService.addListener(EventType.VIEWLET_CLOSED, (e: ViewletEvent) => this.onViewletClosed(e)));
+		this.toUnbind.push(this.eventService.addListener(EventType.COMPOSITE_CLOSED, (e: CompositeEvent) => this.onCompositeClosed(e)));
 	}
 
-	private onViewletOpening(e: ViewletEvent): void {
-		if (this.viewletIdToActions[e.viewletId]) {
-			this.viewletIdToActions[e.viewletId].activate();
+	private onCompositeOpening(e: CompositeEvent): void {
+		if (this.viewletIdToActions[e.compositeId]) {
+			this.viewletIdToActions[e.compositeId].activate();
 
 			// There can only be one active viewlet action
 			for (let key in this.viewletIdToActions) {
-				if (this.viewletIdToActions.hasOwnProperty(key) && key !== e.viewletId) {
+				if (this.viewletIdToActions.hasOwnProperty(key) && key !== e.compositeId) {
 					this.viewletIdToActions[key].deactivate();
 				}
 			}
 		}
 	}
 
-	private onViewletClosed(e: ViewletEvent): void {
-		if (this.viewletIdToActions[e.viewletId]) {
-			this.viewletIdToActions[e.viewletId].deactivate();
+	private onCompositeClosed(e: CompositeEvent): void {
+		if (this.viewletIdToActions[e.compositeId]) {
+			this.viewletIdToActions[e.compositeId].deactivate();
 		}
 	}
 
@@ -109,7 +109,7 @@ export class ActivitybarPart extends Part implements IActivityService {
 		this.createViewletSwitcher($result.clone());
 
 		// Bottom Toolbar with action items for global actions
-		this.createGlobalToolBarArea($result.clone());
+		// this.createGlobalToolBarArea($result.clone()); // not used currently
 
 		return $result;
 	}
@@ -118,21 +118,22 @@ export class ActivitybarPart extends Part implements IActivityService {
 
 		// Viewlet switcher is on top
 		this.viewletSwitcherBar = new ActionBar(div, {
-			actionItemProvider: (action: Action) => this.activityActionItems[action.id]
+			actionItemProvider: (action: Action) => this.activityActionItems[action.id],
+			orientation: ActionsOrientation.VERTICAL,
+			ariaLabel: nls.localize('activityBarAriaLabel', "Active View Switcher")
 		});
-		this.viewletSwitcherBar.getContainer().removeAttribute('tabindex');
 		this.viewletSwitcherBar.getContainer().addClass('position-top');
 
 		// Build Viewlet Actions in correct order
 		let activeViewlet = this.viewletService.getActiveViewlet();
-		let registry = (<IViewletRegistry>Registry.as(ViewletExtensions.Viewlets));
+		let registry = (<ViewletRegistry>Registry.as(ViewletExtensions.Viewlets));
 		let viewletActions: Action[] = registry.getViewlets()
 			.sort((v1: ViewletDescriptor, v2: ViewletDescriptor) => v1.order - v2.order)
 			.map((viewlet: ViewletDescriptor) => {
 				let action = this.instantiationService.createInstance(ViewletActivityAction, viewlet.id + '.activity-bar-action', viewlet);
 
 				let keybinding: string = null;
-				let keys = this.keybindingService.lookupKeybindings(viewlet.id).map(k => k.toLabel());
+				let keys = this.keybindingService.lookupKeybindings(viewlet.id).map(k => this.keybindingService.getLabelFor(k));
 				if (keys && keys.length) {
 					keybinding = keys[0];
 				}
@@ -160,7 +161,6 @@ export class ActivitybarPart extends Part implements IActivityService {
 			actionItemProvider: (action: Action) => this.activityActionItems[action.id],
 			orientation: ActionsOrientation.VERTICAL
 		});
-		this.globalToolBar.getContainer().removeAttribute('tabindex');
 		this.globalToolBar.getContainer().addClass('global');
 
 		this.globalToolBar.actionRunner.addListener(events.EventType.RUN, (e: any) => {
@@ -202,7 +202,7 @@ export class ActivitybarPart extends Part implements IActivityService {
 		return actions.map((action: Action) => {
 			if (primary) {
 				let keybinding: string = null;
-				let keys = this.keybindingService.lookupKeybindings(action.id).map(k => k.toLabel());
+				let keys = this.keybindingService.lookupKeybindings(action.id).map(k => this.keybindingService.getLabelFor(k));
 				if (keys && keys.length) {
 					keybinding = keys[0];
 				}
@@ -255,12 +255,12 @@ class ViewletActivityAction extends ActivityAction {
 		this.viewlet = viewlet;
 	}
 
-	public run(): Promise {
+	public run(): TPromise<any> {
 
 		// cheap trick to prevent accident trigger on a doubleclick (to help nervous people)
 		let now = new Date().getTime();
 		if (now - ViewletActivityAction.lastRun < ViewletActivityAction.preventDoubleClickDelay) {
-			return Promise.as(true);
+			return TPromise.as(true);
 		}
 		ViewletActivityAction.lastRun = now;
 
@@ -278,6 +278,6 @@ class ViewletActivityAction extends ActivityAction {
 			this.activate();
 		}
 
-		return Promise.as(true);
+		return TPromise.as(true);
 	}
 }

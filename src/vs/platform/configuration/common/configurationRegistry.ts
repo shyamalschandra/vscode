@@ -9,13 +9,11 @@ import Event, {Emitter} from 'vs/base/common/event';
 import { IJSONSchema } from 'vs/base/common/jsonSchema';
 import platform = require('vs/platform/platform');
 import objects = require('vs/base/common/objects');
-import strings = require('vs/base/common/strings');
-import {IPluginDescription} from 'vs/platform/plugins/common/plugins';
 import {PluginsRegistry} from 'vs/platform/plugins/common/pluginsRegistry';
-import JSONContributionRegistry = require('vs/languages/json/common/jsonContributionRegistry');
+import JSONContributionRegistry = require('vs/platform/jsonschemas/common/jsonContributionRegistry');
 
 
-export var Extensions = {
+export const Extensions = {
 	Configuration: 'base.contributions.configuration'
 };
 
@@ -38,7 +36,7 @@ export interface IConfigurationRegistry {
 	getConfigurations(): IConfigurationNode[];
 }
 
-export interface IConfigurationNode extends IJSONSchema {
+export interface IConfigurationNode {
 	id?: string;
 	order?: number;
 	type?: string;
@@ -47,20 +45,27 @@ export interface IConfigurationNode extends IJSONSchema {
 	default?: any;
 	properties?: { [path: string]: IJSONSchema; };
 	allOf?: IJSONSchema[];
-	workspace?: boolean;
-	container?: boolean;
 	definitions?: { [path: string]: IJSONSchema; };
 }
 
+const schemaId = 'vscode://schemas/settings';
+const contributionRegistry = <JSONContributionRegistry.IJSONContributionRegistry>platform.Registry.as(JSONContributionRegistry.Extensions.JSONContribution);
+
 class ConfigurationRegistry implements IConfigurationRegistry {
 	private configurationContributors: IConfigurationNode[];
-	private hasJSONContributions: boolean;
+	private configurationSchema: IJSONSchema;
 	private _onDidRegisterConfiguration: Emitter<IConfigurationRegistry>;
 
 	constructor() {
 		this.configurationContributors = [];
-		this.hasJSONContributions = false;
+		this.configurationSchema = { allOf: [] };
 		this._onDidRegisterConfiguration = new Emitter<IConfigurationRegistry>();
+
+		contributionRegistry.registerSchema(schemaId, this.configurationSchema);
+
+		contributionRegistry.addSchemaFileAssociation('vscode://defaultsettings/settings.json', schemaId);
+		contributionRegistry.addSchemaFileAssociation('%APP_SETTINGS_HOME%/settings.json', schemaId);
+		contributionRegistry.addSchemaFileAssociation('/.vscode/settings.json', schemaId);
 	}
 
 	public get onDidRegisterConfiguration() {
@@ -79,47 +84,54 @@ class ConfigurationRegistry implements IConfigurationRegistry {
 	}
 
 	private registerJSONConfiguration(configuration: IConfigurationNode) {
-		var schemaId = strings.format('local://schemas/settings/{0}', configuration.id);
-
-		var schema = <IJSONSchema> objects.clone(configuration);
-		schema.id = schemaId;
-
-		var contributionRegistry = <JSONContributionRegistry.IJSONContributionRegistry>platform.Registry.as(JSONContributionRegistry.Extensions.JSONContribution);
-		contributionRegistry.registerSchema(schemaId, schema);
-
-		contributionRegistry.addSchemaFileAssociation('inmemory://defaults/settings.json', schemaId);
-		contributionRegistry.addSchemaFileAssociation('%APP_SETTINGS_HOME%/settings.json', schemaId);
-		contributionRegistry.addSchemaFileAssociation('/.vscode/settings.json', schemaId);
+		let schema = <IJSONSchema>objects.clone(configuration);
+		this.configurationSchema.allOf.push(schema);
+		contributionRegistry.registerSchema(schemaId, this.configurationSchema);
 	}
 }
 
-var configurationRegistry = new ConfigurationRegistry();
+const configurationRegistry = new ConfigurationRegistry();
 platform.Registry.add(Extensions.Configuration, configurationRegistry);
 
 let configurationExtPoint = PluginsRegistry.registerExtensionPoint<IConfigurationNode>('configuration', {
 	description: nls.localize('vscode.extension.contributes.configuration', 'Contributes configuration settings.'),
 	type: 'object',
-	default: { title: '', type: 'object', properties: {}},
+	default: { title: '', properties: {} },
 	properties: {
 		title: {
 			description: nls.localize('vscode.extension.contributes.configuration.title', 'A summary of the settings. This label will be used in the settings file as separating comment.'),
 			type: 'string'
 		},
-		type: {
-			description: nls.localize('vscode.extension.contributes.configuration.type', 'Type of the configuration, needs to be \'object\''),
-			enum: ['object'],
-		},
 		properties: {
 			description: nls.localize('vscode.extension.contributes.configuration.properties', 'Description of the configuration properties.'),
-			type: 'object'
+			type: 'object',
+			additionalProperties: {
+				$ref: 'http://json-schema.org/draft-04/schema#'
+			}
 		}
 	}
 });
 
 configurationExtPoint.setHandler((extensions) => {
-	for (var i = 0; i < extensions.length; i++) {
-		var configuration = extensions[i].value;
-		var clonedConfiguration = objects.clone(configuration);
+	for (let i = 0; i < extensions.length; i++) {
+		let configuration = <IConfigurationNode>extensions[i].value;
+		let collector = extensions[i].collector;
+
+		if (configuration.type && configuration.type !== 'object') {
+			collector.warn(nls.localize('invalid.type', "if set, 'configuration.type' must be set to 'object"));
+		} else {
+			configuration.type = 'object';
+		}
+
+		if (configuration.title && (typeof configuration.title !== 'string')) {
+			collector.error(nls.localize('invalid.title', "'configuration.title' must be a string"));
+		}
+
+		if (configuration.properties && (typeof configuration.properties !== 'object')) {
+			collector.error(nls.localize('invalid.properties', "'configuration.properties' must be an object"));
+			return;
+		}
+		let clonedConfiguration = objects.clone(configuration);
 		clonedConfiguration.id = extensions[i].description.id;
 		configurationRegistry.registerConfiguration(clonedConfiguration);
 	}

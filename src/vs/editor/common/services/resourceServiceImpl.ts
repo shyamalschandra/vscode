@@ -7,8 +7,8 @@
 import {EventEmitter, IEmitterEvent, ListenerUnbind, ListenerCallback} from 'vs/base/common/eventEmitter';
 import EditorCommon = require('vs/editor/common/editorCommon');
 import {IResourceService, ResourceEvents, IResourceChangedEvent, IResourceAddedEvent, IResourceRemovedEvent} from 'vs/editor/common/services/resourceService';
-import {URL} from 'vs/base/common/network';
 import {IDisposable} from 'vs/base/common/lifecycle';
+import URI from 'vs/base/common/uri';
 
 export class ResourceService extends EventEmitter implements IResourceService {
 	public serviceId = IResourceService;
@@ -50,7 +50,7 @@ export class ResourceService extends EventEmitter implements IResourceService {
 		return r;
 	}
 
-	public insert(url:URL, element:EditorCommon.IMirrorModel): void {
+	public insert(url:URI, element:EditorCommon.IMirrorModel): void {
 		// console.log('INSERT: ' + url.toString());
 		if (this.contains(url)) {
 			// There already exists a model with this id => this is a programmer error
@@ -69,7 +69,7 @@ export class ResourceService extends EventEmitter implements IResourceService {
 		this.emit(ResourceEvents.ADDED, <IResourceAddedEvent>{ url: url, addedElement: element });
 	}
 
-	public get(url:URL):EditorCommon.IMirrorModel {
+	public get(url:URI):EditorCommon.IMirrorModel {
 		if(!this.data[url.toString()]) {
 			return null;
 		}
@@ -82,19 +82,18 @@ export class ResourceService extends EventEmitter implements IResourceService {
 		});
 	}
 
-	public contains(url:URL):boolean {
+	public contains(url:URI):boolean {
 		return !!this.data[url.toString()];
 	}
 
-	public remove(url:URL):void {
+	public remove(url:URI):void {
 		// console.log('REMOVE: ' + url.toString());
 		if(!this.contains(url)) {
 			return;
 		}
 
 		var key = url.toString(),
-			element = this.data[key],
-			i = 1;
+			element = this.data[key];
 
 		// stop listen
 		while(this.unbinds[key].length > 0) { this.unbinds[key].pop()(); }

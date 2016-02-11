@@ -7,7 +7,7 @@
 import URI from 'vs/base/common/uri';
 import {createDecorator, ServiceIdentifier} from 'vs/platform/instantiation/common/instantiation';
 
-export var IWorkspaceContextService = createDecorator<IWorkspaceContextService>('contextService');
+export const IWorkspaceContextService = createDecorator<IWorkspaceContextService>('contextService');
 
 export interface IWorkspaceContextService {
 	serviceId: ServiceIdentifier<any>;
@@ -78,12 +78,6 @@ export interface IWorkspace {
 }
 
 export interface IConfiguration {
-
-	/**
-	 * Additional worker services
-	 */
-	additionalWorkerServices?: { serviceId: string; moduleName: string; ctorName: string; }[];
-
 	/**
 	 * Some environmental flags
 	 */
@@ -91,6 +85,8 @@ export interface IConfiguration {
 }
 
 export interface IEnvironment {
+	language: string;
+
 	appName: string;
 	appRoot: string;
 	isBuilt: boolean;
@@ -104,6 +100,7 @@ export interface IEnvironment {
 
 	extensionsGallery: {
 		serviceUrl: string;
+		cacheUrl: string;
 		itemUrl: string;
 	};
 
@@ -120,6 +117,7 @@ export interface IEnvironment {
 
 	debugPluginHostPort: number;
 	debugBrkPluginHost: boolean;
+	disablePlugins: boolean;
 
 	logPluginHostCommunication: boolean;
 	verboseLogging: boolean;
@@ -137,11 +135,10 @@ export interface IEnvironment {
 	aiConfig: {
 		key: string;
 		asimovKey: string;
-	},
+	};
 
 	sendASmile: {
-		submitUrl: string,
 		reportIssueUrl: string,
 		requestFeatureUrl: string
-	}
+	};
 }

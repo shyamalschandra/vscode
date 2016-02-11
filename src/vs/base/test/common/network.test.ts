@@ -5,8 +5,8 @@
 'use strict';
 
 import * as assert from 'assert';
+import URI from 'vs/base/common/uri';
 import { URL, ParsedUrl } from 'vs/base/common/network';
-import { serialize, deserialize } from 'vs/base/common/marshalling';
 
 function assertUrl(raw:string, scheme:string, domain:string, port:string, path:string, queryString:string, fragmentId:string): void {
 	var url = new ParsedUrl(raw);
@@ -20,6 +20,14 @@ function assertUrl(raw:string, scheme:string, domain:string, port:string, path:s
 	assert.equal(url.getPath(), path, 'getPath ok for ' + raw);
 	assert.equal(url.getQueryString(), queryString, 'getQueryString ok for ' + raw);
 	assert.equal(url.getFragmentId(), fragmentId, 'getFragmentId ok for ' + raw);
+
+	// check for equivalent behaviour
+	var uri = URI.parse(raw);
+	assert.equal(uri.scheme, scheme);
+	assert.equal(uri.authority, port ? domain + ':' + port : domain);
+	assert.equal(uri.path, path);
+	assert.equal(uri.query, queryString);
+	assert.equal(uri.fragment, fragmentId);
 }
 
 function assertCombine(base:string, relativeUrl:string, expectedUrl:string): void {
@@ -209,8 +217,4 @@ suite('Network', () => {
 		assert.equal(url.toUnique(), 'inmemory://model/1');
 	});
 
-	test('Bug 16793:# in folder name => mirror models get out of sync', function () {
-		var url = new URL('file:///C:/model/1#css');
-		assert.equal(deserialize(serialize(url)).toString(), url.toString());
-	});
 });

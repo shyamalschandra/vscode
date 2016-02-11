@@ -2,7 +2,7 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
- 
+
 .monaco-workbench > .activitybar > .content .monaco-action-bar .action-item {
 	display: block;
 	position: relative;
@@ -29,6 +29,38 @@
 	text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
 }
 
+.monaco-workbench > .activitybar > .content .monaco-action-bar .badge:active:before,
+.monaco-workbench > .activitybar > .content .monaco-action-bar .action-item .action-label:focus:before {
+	content: "";
+	position: absolute;
+	top: 4px;
+	height: 32px;
+	width: 0;
+	border-left: 2px solid;
+}
+
+.monaco-workbench.vs > .activitybar > .content .monaco-action-bar .badge:active:before,
+.monaco-workbench.vs-dark > .activitybar > .content .monaco-action-bar .badge:active:before,
+.monaco-workbench.vs > .activitybar > .content .monaco-action-bar .action-item .action-label:focus:before,
+.monaco-workbench.vs-dark > .activitybar > .content .monaco-action-bar .action-item .action-label:focus:before {
+	border-left-color: #007ACC;
+}
+
+.monaco-workbench.hc-black > .activitybar > .content .monaco-action-bar .badge:active:before,
+.monaco-workbench.hc-black > .activitybar > .content .monaco-action-bar .action-item .action-label:focus:before {
+	border-left-color: #DF740C;
+}
+
+.monaco-workbench > .activitybar.left > .content .monaco-action-bar .badge:active:before,
+.monaco-workbench > .activitybar.left > .content .monaco-action-bar .action-item .action-label:focus:before {
+	left: 1px;
+}
+
+.monaco-workbench > .activitybar.right > .content .monaco-action-bar .badge:active:before,
+.monaco-workbench > .activitybar.right > .content .monaco-action-bar .action-item .action-label:focus:before {
+	right: 1px;
+}
+
 .monaco-workbench > .activitybar > .content .monaco-action-bar .action-label > .label {
 	-ms-flex: 1 1 auto;
 	flex: 1 1 auto;
@@ -50,14 +82,6 @@
 	text-decoration: none;
 }
 
-.monaco-workbench > .activitybar > .content .monaco-action-bar .action-item.active {
-	-ms-transform: none;
-	-webkit-transform: none;
-	-moz-transform: none;
-	-o-transform: none;
-	transform: none;
-}
-
 .monaco-workbench > .activitybar > .content .monaco-action-bar .badge {
 	position: absolute;
 	top: 0;
@@ -70,69 +94,20 @@
 .monaco-workbench > .activitybar > .content .monaco-action-bar .badge .badge-content {
 	position: absolute;
 	top: 20px;
-	right: 8px;	
+	right: 8px;
 	font-size: 11px;
 	min-width: 8px;
 	height: 18px;
 	line-height: 18px;
-	padding: 0 5px;	
+	padding: 0 5px;
 	border-radius: 20px;
 	text-align: center;
 	color: white;
 }
 
 .monaco-workbench > .activitybar > .content .monaco-action-bar .action-item .action-label.active,
-.monaco-workbench > .activitybar > .content .monaco-action-bar .action-item:hover .action-label,
-.monaco-workbench > .activitybar > .content .monaco-action-bar .action-item .action-label:focus {
+.monaco-workbench > .activitybar > .content .monaco-action-bar .action-item:hover .action-label {
 	opacity: 1;
-}
-
-.monaco-workbench.vs > .activitybar.left:not(.help) > .content > .monaco-action-bar.position-top .action-label.active:after {
-	content: '';
-	position: absolute;
-	top: 15px;
-	right: 0;
-	width: 0; 
-	height: 0; 
-	border-top: 5px solid transparent;
-	border-bottom: 5px solid transparent;
-	border-right: 5px solid #F6F6F6;
-}
-
-.monaco-workbench.vs-dark > .activitybar.left:not(.help) > .content > .monaco-action-bar.position-top .action-label.active:after {
-	content: '';
-	position: absolute;
-	top: 15px;
-	right: 0;
-	width: 0; 
-	height: 0; 
-	border-top: 5px solid transparent;
-	border-bottom: 5px solid transparent;
-	border-right: 5px solid #252526;
-}
-
-.monaco-workbench.vs > .activitybar.right:not(.help) > .content > .monaco-action-bar.position-top .action-label.active:before {
-	content: '';
-	position: absolute;
-	top: 15px;
-	left: 0;
-	width: 0; 
-	height: 0; 
-	border-top: 5px solid transparent;
-	border-bottom: 5px solid transparent;
-	border-left: 5px solid #F6F6F6;
-}
-
-.monaco-workbench.vs-dark > .activitybar.right:not(.help) > .content > .monaco-action-bar.position-top .action-label.active:before {
-	content: '';
-	position: absolute;
-	top: 15px;
-	left: 0;
-	width: 0; 
-	height: 0; 
-	border-top: 5px solid transparent;
-	border-bottom: 5px solid transparent;
-	border-left: 5px solid #252526;
 }
 
 /* Right  aligned */
@@ -154,13 +129,12 @@
 
 .monaco-workbench > .activitybar.right > .content .monaco-action-bar .badge {
 	left: auto;
-	right: 0;	
+	right: 0;
 }
 
 /* High Contrast Theming */
 .monaco-workbench.hc-black > .activitybar > .content .monaco-action-bar .action-label,
 .monaco-workbench.hc-black > .activitybar > .content .monaco-action-bar .action-label.active {
-	background: none;
 	opacity: 1;
 }
 

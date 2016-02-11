@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 'use strict';
 
-import marshalling = require('vs/base/common/marshalling');
 import platform = require('vs/base/common/platform');
 
 // see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/encodeURIComponent
@@ -18,7 +17,7 @@ function fixedEncodeURIComponent(str: string): string {
  * (http://tools.ietf.org/html/rfc3986#section-3) with minimal validation
  * and encoding.
  *
- *     foo://example.com:8042/over/there?name=ferret#nose
+ *       foo://example.com:8042/over/there?name=ferret#nose
  *       \_/   \______________/\_________/ \_________/ \__/
  *        |           |            |            |        |
  *     scheme     authority       path        query   fragment
@@ -91,7 +90,7 @@ export default class URI {
 	private _fsPath: string;
 
 	/**
-	 * Retuns a string representing the corresponding file system path of this URI.
+	 * Returns a string representing the corresponding file system path of this URI.
 	 * Will handle UNC paths and normalize windows drive letters to lower-case. Also
 	 * uses the platform specific path separator. Will *not* validate the path for
 	 * invalid characters and semantics. Will *not* look at the scheme of this URI.
@@ -168,17 +167,19 @@ export default class URI {
 		path = path.replace(/%/g, '%25');
 		path = path.replace(/#/g, '%23');
 		path = path.replace(/\?/g, '%3F');
+		// makes sure something like 'C:/Users' isn't
+		// parsed as scheme='C', path='Users'
 		path = URI._driveLetter.test(path)
 			? '/' + path
 			: path;
 
 		var ret = URI._parse(path);
 		if (ret.scheme || ret.fragment || ret.query) {
-			throw new Error();
+			throw new Error('Path contains a scheme, fragment or a query. Can not convert it to a file uri.');
 		}
 
 		ret = ret.with('file', undefined,
-			decodeURIComponent(ret.path),
+			decodeURIComponent(ret.path[0] === '/' ? ret.path : '/' + ret.path), // path starts with slash
 			undefined, undefined);
 
 		return ret;
@@ -193,7 +194,7 @@ export default class URI {
 			ret._path = match[5] || ret._path;
 			ret._query = match[7] || ret._query;
 			ret._fragment = match[9] || ret._fragment;
-		};
+		}
 		URI._validate(ret);
 		return ret;
 	}
@@ -283,115 +284,39 @@ export default class URI {
 	}
 
 	public toJSON(): any {
-		return this.toString();
-	}
-
-	public _toSerialized(): any {
-		// because network.URL extends this class it is important that
-		// it can refine/override this method
-
-		return {
-			$isURI: true,
-			_scheme: this._scheme,
-			_authority: this._authority,
-			_path: this._path,
-			_query: this._query,
-			_fragment: this._fragment,
-			_fsPath: this._fsPath,
-			_formatted: this._formatted
+		return <URIComponents> {
+			scheme: this.scheme,
+			authority: this.authority,
+			path: this.path,
+			fsPath: this.fsPath,
+			query: this.query,
+			fragment: this.fragment.replace(/URL_MARSHAL_REMOVE.*$/, ''), // TODO@Alex: implement derived resources (embedded mirror models) better
+			external: this.toString().replace(/#?URL_MARSHAL_REMOVE.*$/, ''), // TODO@Alex: implement derived resources (embedded mirror models) better
+			$mid: 1
 		};
 	}
 
-	static _fromSerialized(data: any): URI {
+	static revive(data: any): URI {
 		let result = new URI();
-		result._scheme = data._scheme;
-		result._authority = data._authority;
-		result._path = data._path;
-		result._query = data._query;
-		result._fragment = data._fragment;
-		result._fsPath = data._fsPath;
-		result._formatted = data._formatted;
+		result._scheme = (<URIComponents> data).scheme;
+		result._authority = (<URIComponents> data).authority;
+		result._path = (<URIComponents> data).path;
+		result._query = (<URIComponents> data).query;
+		result._fragment = (<URIComponents> data).fragment;
+		result._fsPath = (<URIComponents> data).fsPath;
+		result._formatted = (<URIComponents>data).external;
+		URI._validate(result);
 		return result;
 	}
-
-	public static isURI(thing: any): thing is URI {
-		if (thing instanceof URI) {
-			return true;
-		}
-		if(!thing) {
-			return false;
-		}
-		if (typeof (<URI>thing).scheme !== 'string') {
-			return false;
-		}
-		if (typeof (<URI>thing).authority !== 'string') {
-			return false;
-		}
-		if (typeof (<URI>thing).fsPath !== 'string') {
-			return false;
-		}
-		if (typeof (<URI>thing).query !== 'string') {
-			return false;
-		}
-		if (typeof (<URI>thing).fragment !== 'string') {
-			return false;
-		}
-		if (typeof (<URI>thing).with !== 'function') {
-			return false;
-		}
-		if (typeof (<URI>thing).withScheme !== 'function') {
-			return false;
-		}
-		if (typeof (<URI>thing).withAuthority !== 'function') {
-			return false;
-		}
-		if (typeof (<URI>thing).withPath !== 'function') {
-			return false;
-		}
-		if (typeof (<URI>thing).withQuery !== 'function') {
-			return false;
-		}
-		if (typeof (<URI>thing).withFragment !== 'function') {
-			return false;
-		}
-		if (typeof (<URI>thing).toString !== 'function') {
-			return false;
-		}
-		if (typeof (<URI>thing).toJSON !== 'function') {
-			return false;
-		}
-		return true;
-	}
 }
 
-interface _ISerializedURI {
-	$isURI: boolean;
-
-	_scheme: string;
-	_authority: string;
-	_path: string;
-	_query: string;
-	_fragment: string;
-
-	_fsPath: string;
-	_formatted: string;
+interface URIComponents {
+	$mid: number;
+	scheme: string;
+	authority: string;
+	path: string;
+	fsPath: string;
+	query: string;
+	fragment: string;
+	external: string;
 }
-
-marshalling.registerMarshallingContribution({
-
-	canSerialize: (obj:any): boolean => {
-		return URI.isURI(obj);
-	},
-
-	serialize: (url: URI, serialize: (obj: any) => any): _ISerializedURI => {
-		return url._toSerialized();
-	},
-
-	canDeserialize: (obj:_ISerializedURI): boolean => {
-		return obj.$isURI;
-	},
-
-	deserialize: (obj:_ISerializedURI, deserialize:(obj:any)=>any): any => {
-		return URI._fromSerialized(obj);
-	}
-});

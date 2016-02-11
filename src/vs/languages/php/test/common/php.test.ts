@@ -14,6 +14,7 @@ import EditorCommon = require('vs/editor/common/editorCommon');
 import Modes = require('vs/editor/common/modes');
 import modesUtil = require('vs/editor/test/common/modesUtil');
 import {htmlTokenTypes} from 'vs/languages/html/common/html';
+import {cssTokenTypes} from 'vs/languages/css/common/css';
 
 suite('Syntax Highlighting - PHP', () => {
 
@@ -32,7 +33,7 @@ suite('Syntax Highlighting - PHP', () => {
 	});
 
 	test('', () => {
-	 	modesUtil.executeTests(tokenizationSupport, [
+		modesUtil.executeTests(tokenizationSupport, [
 
 			// Bug 13596:[ErrorTelemetry] Stream did not advance while tokenizing. Mode id is php (stuck)
 			// We're testing the fact that tokenize does not throw
@@ -1767,9 +1768,9 @@ suite('Syntax Highlighting - PHP', () => {
 				{ startIndex:15, type: 'metatag.php' },
 				{ startIndex:17, type: 'punctuation.bracket.css' },
 				{ startIndex:18, type: '' },
-				{ startIndex:19, type: 'support.type.property-name.css' },
+				{ startIndex:19, type: cssTokenTypes.TOKEN_PROPERTY + '.css' },
 				{ startIndex:24, type: 'punctuation.css' },
-				{ startIndex:25, type: 'meta.property-value.css' },
+				{ startIndex:25, type: cssTokenTypes.TOKEN_VALUE + '.css' },
 				{ startIndex:29, type: 'punctuation.css' },
 				{ startIndex:30, type: '' },
 				{ startIndex:31, type: 'punctuation.bracket.css' },
@@ -1787,9 +1788,9 @@ suite('Syntax Highlighting - PHP', () => {
 				{ startIndex:15, type: 'metatag.php' },
 				{ startIndex:17, type: 'punctuation.bracket.css' },
 				{ startIndex:18, type: '' },
-				{ startIndex:19, type: 'support.type.property-name.css' },
+				{ startIndex:19, type: cssTokenTypes.TOKEN_PROPERTY + '.css' },
 				{ startIndex:24, type: 'punctuation.css' },
-				{ startIndex:25, type: 'meta.property-value.css' },
+				{ startIndex:25, type: cssTokenTypes.TOKEN_VALUE + '.css' },
 				{ startIndex:29, type: 'punctuation.css' },
 				{ startIndex:30, type: '' },
 				{ startIndex:31, type: 'punctuation.bracket.css' },
@@ -1814,9 +1815,9 @@ suite('Syntax Highlighting - PHP', () => {
 				{ startIndex:23, type: '' },
 				{ startIndex:24, type: 'punctuation.bracket.css' },
 				{ startIndex:25, type: '' },
-				{ startIndex:26, type: 'support.type.property-name.css' },
+				{ startIndex:26, type: cssTokenTypes.TOKEN_PROPERTY + '.css' },
 				{ startIndex:31, type: 'punctuation.css' },
-				{ startIndex:32, type: 'meta.property-value.css' },
+				{ startIndex:32, type: cssTokenTypes.TOKEN_VALUE + '.css' },
 				{ startIndex:36, type: 'punctuation.css' },
 				{ startIndex:37, type: '' },
 				{ startIndex:38, type: 'punctuation.bracket.css' },
@@ -1916,7 +1917,7 @@ suite('Syntax Highlighting - PHP', () => {
 				{ startIndex:17, type: '' },
 				{ startIndex:18, type: 'metatag.php', bracket: Modes.Bracket.Close }
 			]}]
-		 ]);
+		]);
 	});
 
 	test('Word definition', function() {

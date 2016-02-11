@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 'use strict';
 
-import EditorCommon = require('vs/editor/common/editorCommon');
 import Modes = require('vs/editor/common/modes');
 import supports = require('vs/editor/common/modes/supports');
 import htmlMode = require('vs/languages/html/common/html');
@@ -114,8 +113,6 @@ export class HandlebarsMode extends htmlMode.HTMLMode<htmlWorker.HTMLWorker> {
 		@IModeService modeService: IModeService
 	) {
 		super(descriptor, instantiationService, threadService, modeService);
-
-		this.formattingSupport = null;
 
 		this.onEnterSupport = new OnEnterSupport(this.getId(), {
 			brackets: [

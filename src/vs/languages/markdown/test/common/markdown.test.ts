@@ -6,10 +6,9 @@
 
 import 'vs/languages/markdown/common/markdown.contribution';
 import modesUtil = require('vs/editor/test/common/modesUtil');
-import markdownMode = require('vs/languages/markdown/common/markdown');
-import EditorCommon = require('vs/editor/common/editorCommon');
 import Modes = require('vs/editor/common/modes');
 import {htmlTokenTypes} from 'vs/languages/html/common/html';
+import {cssTokenTypes} from 'vs/languages/css/common/css';
 
 suite('Markdown - tokenization', () => {
 
@@ -22,7 +21,7 @@ suite('Markdown - tokenization', () => {
 	});
 
 	test('', () => {
-	 	modesUtil.executeTests(tokenizationSupport, [
+		modesUtil.executeTests(tokenizationSupport, [
 			// HTML and embedded content - bug 16912
 			[{
 			line: '<b>foo</b>*bar*',
@@ -56,14 +55,14 @@ suite('Markdown - tokenization', () => {
 			line: '<style>div { background: red }</style>*bar*',
 			tokens: [
 				{ startIndex:0, type: htmlTokenTypes.getTag('style.md'), bracket: Modes.Bracket.Open },
-				{ startIndex:7, type: 'entity.name.tag.css' },
+				{ startIndex:7, type: cssTokenTypes.TOKEN_SELECTOR_TAG + '.css' },
 				{ startIndex:10, type: '' },
 				{ startIndex:11, type: 'punctuation.bracket.css', bracket: Modes.Bracket.Open },
 				{ startIndex:12, type: '' },
-				{ startIndex:13, type: 'support.type.property-name.css' },
+				{ startIndex:13, type: cssTokenTypes.TOKEN_PROPERTY + '.css' },
 				{ startIndex:23, type: 'punctuation.css' },
 				{ startIndex:24, type: '' },
-				{ startIndex:25, type: 'meta.property-value.css' },
+				{ startIndex:25, type: cssTokenTypes.TOKEN_VALUE + '.css' },
 				{ startIndex:28, type: '' },
 				{ startIndex:29, type: 'punctuation.bracket.css', bracket: Modes.Bracket.Close },
 				{ startIndex:30, type: htmlTokenTypes.getTag('style.md'), bracket: Modes.Bracket.Close },

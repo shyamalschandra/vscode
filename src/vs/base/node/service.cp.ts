@@ -10,10 +10,13 @@ import { Delayer } from 'vs/base/common/async';
 import { clone, assign } from 'vs/base/common/objects';
 import { IServiceCtor, Server as IPCServer, Client as IPCClient, IServiceMap } from 'vs/base/common/service';
 
+// The amd loader has the global scope assigned to this.
+const globalRequire = this.require;
+
 export class Server extends IPCServer {
 	constructor() {
 		super({
-			send: r => process.send(r),
+			send: r => { try { process.send(r); } catch (e) { /* not much to do */ } },
 			onMessage: cb => process.on('message', cb)
 		});
 
@@ -123,7 +126,7 @@ export class Client implements IDisposable {
 
 			this.child = cp.fork(this.modulePath, args, forkOpts);
 			this._client = new IPCClient({
-				send: r => this.child.connected && this.child.send(r),
+				send: r => this.child && this.child.connected && this.child.send(r),
 				onMessage: cb => {
 					this.child.on('message', (msg) => {
 

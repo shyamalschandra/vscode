@@ -6,10 +6,9 @@
 
 import WinJS = require('vs/base/common/winjs.base');
 import Monarch = require('vs/editor/common/modes/monarch/monarch');
-import Network = require('vs/base/common/network');
+import URI from 'vs/base/common/uri';
 import Types = require('vs/editor/common/modes/monarch/monarchTypes');
 import Compile = require('vs/editor/common/modes/monarch/monarchCompile');
-import EditorCommon = require('vs/editor/common/editorCommon');
 import Modes = require('vs/editor/common/modes');
 import MarkdownWorker = require('vs/languages/markdown/common/markdownWorker');
 import {OneWorkerAttr} from 'vs/platform/thread/common/threadService';
@@ -52,7 +51,7 @@ export const language =
 			root: [
 
 				// headers (with #)
-				[/^(\s*)(#+)((?:[^\\#]|@escapes)+)((?:#+)?)/, ['white', markdownTokenTypes.TOKEN_HEADER_LEAD, markdownTokenTypes.TOKEN_HEADER, markdownTokenTypes.TOKEN_HEADER]],
+				[/^(\s{0,3})(#+)((?:[^\\#]|@escapes)+)((?:#+)?)/, ['white', markdownTokenTypes.TOKEN_HEADER_LEAD, markdownTokenTypes.TOKEN_HEADER, markdownTokenTypes.TOKEN_HEADER]],
 
 				// headers (with =)
 				[/^\s*(=+|\-+)\s*$/, markdownTokenTypes.TOKEN_EXT_HEADER],
@@ -114,8 +113,8 @@ export const language =
 
 				// links
 				[/\{[^}]+\}/, 'string.target'],
-				[/(!?\[)((?:[^\]\\]|@escapes)+)(\]\([^\)]+\))/, ['string.link', '', 'string.link']],
-				[/(!?\[)((?:[^\]\\]|@escapes)+)(\])/, 'string.link'],
+				[/(!?\[)((?:[^\]\\]|@escapes)*)(\]\([^\)]+\))/, ['string.link', '', 'string.link']],
+				[/(!?\[)((?:[^\]\\]|@escapes)*)(\])/, 'string.link'],
 
 				// or html
 				{ include: 'html' },
@@ -204,7 +203,6 @@ export const language =
 	};
 
 export class MarkdownMode extends Monarch.MonarchMode<MarkdownWorker.MarkdownWorker> implements Modes.IEmitOutputSupport {
-	private baseUrl: string;
 
 	public emitOutputSupport: Modes.IEmitOutputSupport;
 
@@ -219,9 +217,6 @@ export class MarkdownMode extends Monarch.MonarchMode<MarkdownWorker.MarkdownWor
 		super(descriptor, Compile.compile(language), instantiationService, threadService, modeService, modelService);
 
 		this.emitOutputSupport = this;
-
-		const workspace = workspaceContextService && workspaceContextService.getWorkspace();
-		this.baseUrl = workspace && workspace.resource.toString();
 	}
 
 	public getCommentsConfiguration(): Modes.ICommentsConfiguration {
@@ -229,8 +224,8 @@ export class MarkdownMode extends Monarch.MonarchMode<MarkdownWorker.MarkdownWor
 	}
 
 	static $getEmitOutput = OneWorkerAttr(MarkdownMode, MarkdownMode.prototype.getEmitOutput);
-	public getEmitOutput(resource: Network.URL, absoluteWorkerResourcesPath?: string): WinJS.TPromise<Modes.IEmitOutput> { // TODO@Ben technical debt: worker cannot resolve paths absolute
-		return this._worker((w) => w.getEmitOutput(resource, this.baseUrl, absoluteWorkerResourcesPath));
+	public getEmitOutput(resource: URI, absoluteWorkerResourcesPath?: string): WinJS.TPromise<Modes.IEmitOutput> { // TODO@Ben technical debt: worker cannot resolve paths absolute
+		return this._worker((w) => w.getEmitOutput(resource, absoluteWorkerResourcesPath));
 	}
 
 	protected _getWorkerDescriptor(): AsyncDescriptor2<Modes.IMode, Modes.IWorkerParticipant[], MarkdownWorker.MarkdownWorker> {

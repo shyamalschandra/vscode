@@ -5,7 +5,7 @@
 
 'use strict';
 
-import { Promise } from 'vs/base/common/winjs.base';
+import { Promise, TPromise } from 'vs/base/common/winjs.base';
 import { assign } from 'vs/base/common/objects';
 import { IDisposable, fnToDisposable }  from 'vs/base/common/lifecycle';
 import Event, { Emitter } from 'vs/base/common/event';
@@ -71,6 +71,10 @@ export interface IServiceMap {
 	[name: string]: any;
 }
 
+export interface IClient {
+	getService<TService>(serviceName: string, serviceCtor: IServiceCtor<TService>): TService;
+}
+
 const ServiceEventProperty = '$__SERVICE_EVENT';
 
 /**
@@ -131,7 +135,11 @@ export class Server {
 			if (!method) {
 				promise = Promise.wrapError(new Error(`${ request.name } is not a valid method on ${ request.serviceName }`));
 			} else {
-				promise = method.call(service, ...request.args)
+				try {
+					promise = method.call(service, ...request.args);
+				} catch (err) {
+					promise = Promise.wrapError(err);
+				}
 			}
 
 			if (!Promise.is(promise)) {
@@ -155,7 +163,7 @@ export class Server {
 				this.protocol.send(<IRawResponse> { id, data: {
 					message: data.message,
 					name: data.name,
-					stack: data.stack.split('\n')
+					stack: data.stack ? data.stack.split('\n') : void 0
 				}, type: ResponseType.Error });
 			} else {
 				this.protocol.send(<IRawResponse> { id, data, type: ResponseType.ErrorObj });
@@ -187,7 +195,7 @@ export class Server {
 	}
 }
 
-export class Client {
+export class Client implements IClient {
 
 	private state: ServiceState;
 	private bufferedRequests: IRequest[];
@@ -282,17 +290,24 @@ export class Client {
 	}
 
 	private bufferRequest(request: IRequest): Promise {
+		let flushedRequest: Promise = null;
+
 		return new Promise((c, e, p) => {
 			this.bufferedRequests.push(request);
 
 			request.flush = () => {
 				request.flush = null;
-				this.doRequest(request).done(c, e, p);
+				flushedRequest = this.doRequest(request).then(c, e, p);
 			};
 		}, () => {
 			request.flush = null;
 
 			if (this.state !== ServiceState.Uninitialized) {
+				if (flushedRequest) {
+					flushedRequest.cancel();
+					flushedRequest = null;
+				}
+
 				return;
 			}
 
@@ -327,4 +342,51 @@ export class Client {
 			// noop
 		}
 	}
+}
+
+/**
+ * Useful when the service itself is needed right away but the client
+ * is wrapped within a promise.
+ */
+export function getService<TService>(clientPromise: TPromise<IClient>, serviceName: string, serviceCtor: IServiceCtor<TService>): TService {
+	let _servicePromise: TPromise<TService>;
+	let servicePromise = () => {
+		if (!_servicePromise) {
+			_servicePromise = clientPromise.then(client => client.getService(serviceName, serviceCtor));
+		}
+		return _servicePromise;
+	};
+
+	return Object.keys(serviceCtor.prototype)
+		.filter(key => key !== 'constructor')
+		.reduce((result, key) => {
+			if (isServiceEvent(serviceCtor.prototype[key])) {
+				let promise: TPromise<void>;
+				let disposable: IDisposable;
+
+				const emitter = new Emitter<any>({
+					onFirstListenerAdd: () => {
+						promise = servicePromise().then(service => {
+							disposable = service[key](e => emitter.fire(e));
+						});
+					},
+					onLastListenerRemove: () => {
+						if (disposable) {
+							disposable.dispose();
+							disposable = null;
+						}
+						promise.cancel();
+						promise = null;
+					}
+				});
+
+				return assign(result, { [key]: emitter.event });
+			}
+
+			return assign(result, {
+				[key]: (...args) => {
+					return servicePromise().then(service => service[key](...args));
+				}
+			});
+		}, {} as TService);
 }
